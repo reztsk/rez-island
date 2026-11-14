@@ -1,6 +1,6 @@
 {
-    "version":  "1.5.0",
-    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.5.0/REZ.exe",
-    "sha256":  "4cc1fe90371e79efbed1f6e20017ce3237f8762a65116471f8c6bf532c7dc4eb",
-    "notes":  "Périphériques sans fil + batterie (charge en cours, alertes), menu Performance PC détaillé (courbes, cœurs, applis gourmandes), calculatrice intégrée avec historique et conversion d\u0027unités, page Réglages dédiée avec thèmes, interface affinée."
+    "version":  "1.6.0",
+    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.6.0/REZ.exe",
+    "sha256":  "83cb787bc8092f80e7c54a5afda030f471e464cdecc498696c5fa888aeb235da",
+    "notes":  "REZ v1.6.0 - Accueil en grille, Réglages complets, personnalisation totale\n\n- Nouvel accueil en grille de widgets en verre fumé : Minuteur (− ▶ +), Lecteur, Presse-papiers, Notes, Anti-veille, Météo, Horloge, Focus, Système, Batteries, Téléchargements, Discord, Jeu + tuiles d\u0027accès rapide (Calcul, Capture, Perf, Réglages…)\n- Personnalisation : ✎ puis glisser les tuiles, × pour retirer, « Ajouter un widget ». Aussi dans Réglages → Accueil \u0026 widgets\n- Roue crantée ⚙ : page Réglages dédiée (apparence, widgets, modules du dock, position, raccourcis, services, mises à jour, système)\n- Mises à jour : bouton « Vérifier » + installation automatique (île réduite, hors jeu, SHA-256 vérifié)\n- Déplacement libre réparé : cadenas dans l\u0027en-tête, l\u0027île se pose n\u0027importe où (haut, bas, côtés, coins, multi-écrans) et reste exactement là après redémarrage\n- Presse-papiers en mémoire uniquement, copies des gestionnaires de mots de passe ignorées"
 }
