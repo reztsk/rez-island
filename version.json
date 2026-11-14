@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "url": "",
-  "sha256": "",
-  "notes": "Version initiale"
+    "version":  "1.1.0",
+    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.1.0/REZ.exe",
+    "sha256":  "fa0da845efbb9099c2de0aa53c104a6a54fdfffeb68d4669e68ecc6ea24db8b6",
+    "notes":  "Dynamic Island compacte ancree en haut (pilule + ile animee), option Compact/Large, pilule permanente."
 }
