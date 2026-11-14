@@ -10,6 +10,10 @@ Overlay glassmorphism sombre, tray, raccourci global, auto-update 1 clic. Ce pro
 - Jeu en cours : détecté par le seul **nom** du processus (comme le Gestionnaire des tâches). REZ n'ouvre jamais le processus du jeu.
 - Pochettes : celles fournies par le lecteur via SMTC, ou en HD via iTunes Search (API publique).
 - Mode Focus : coupe les notifications Windows de Discord (même réglage que Paramètres > Notifications), puis les restaure.
+- Système : CPU / RAM / GPU / VRAM / températures via les compteurs de performance Windows, DXGI et D3DKMT (comme le Gestionnaire des tâches). **Aucun pilote noyau** (les pilotes de capteurs type WinRing0 sont bloqués par Vanguard & co).
+- Vocal Discord : RPC local officiel, autorisé par toi dans Discord (scopes `rpc`, `rpc.voice.read`, `rpc.voice.write`).
+- Mélangeur audio : sessions audio Windows (comme le mélangeur de volume). Aucun handle sur les jeux.
+- Téléchargements : manifestes Steam `steamapps/appmanifest_*.acf` (jamais `steamapps/common`), fichiers partiels du dossier Téléchargements, API Web locale de qBittorrent, débit réseau.
 - Overlay = simple fenêtre "toujours au-dessus". Les jeux en **plein écran exclusif** passent par-dessus → mettre le jeu en **plein écran fenêtré / sans bordure**.
 
 ## Structure
@@ -32,8 +36,12 @@ REZ/
       ├─ settings.rs       paramètres JSON (%APPDATA%\com.rez.island)
       ├─ secure.rs         chiffrement DPAPI des clés API
       ├─ media.rs          lecture/pause/suivant + volume
+      ├─ audio.rs          mélangeur audio par application
+      ├─ hw.rs             GPU, VRAM, températures, débit réseau
+      ├─ downloads.rs      suivi des téléchargements
+      ├─ voice.rs          vocal Discord (RPC)
       ├─ discord.rs        Rich Presence IPC
-      ├─ net.rs            météo, stats, chat IA (Claude)
+      ├─ net.rs            météo, stats, chat IA (Claude, ChatGPT, Gemini)
       └─ updater.rs        auto-update 1 clic
 ```
 
@@ -91,18 +99,23 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 | Île | Pilule collée en haut au centre (heure, musique en cours / météo). Clic → l'île s'ouvre |
 | Ouvrir / réduire | `Ctrl+B` (modifiable), clic sur la pilule ou l'icône tray, `Échap` pour réduire |
 | Masquer / afficher l'île | `Ctrl+N` (modifiable, Retour arrière pour le désactiver). REZ reste dans le tray |
-| Déplacer l'île | Paramètres → « Déverrouiller l'emplacement », puis glisser la pilule ou l'en-tête (multi-écrans). 🔒 pour la reverrouiller |
+| Position | Paramètres → Haut / Gauche / Droite. Les panneaux s'ouvrent toujours vers l'intérieur de l'écran |
+| Déplacer l'île | Paramètres → « Déverrouiller l'emplacement », glisser la pilule ou l'en-tête (multi-écrans), puis 🔒 : l'île reste exactement là |
 | Opacité | Paramètres → curseur « Opacité du verre » |
 | Lecteur | Pochette HD + icône de l'app, ±10 s, piste précédente / suivante, barre de progression cliquable |
+| Mélangeur audio | Multimédia → Mélangeur audio : un volume (et un muet) par application qui joue du son |
+| Système | Accueil → jauges CPU, GPU, RAM, VRAM + températures CPU / GPU (si Windows les fournit) |
+| Téléchargements | Accueil → Téléch. : Steam (% exact + temps restant), qBittorrent, navigateurs. Progression aussi dans la pilule |
 | Accueil | Onglets Aperçu (widgets Focus, Système, Discord, Jeu, raccourcis) / Météo (heure par heure, 5 jours) / Outils |
 | Mode Focus | Accueil → Outils : minuteur. Les notifications Discord sont masquées jusqu'à la fin |
 | Discord | Connexion auto quand Discord est lancé : photo de profil, présence auto selon le jeu, présence perso |
+| Vocal Discord | Client ID + Client Secret de ton app (redirection `http://localhost`), puis « Activer le vocal » : membres du salon, qui parle (cercle vert), micro / casque / quitter |
 | Trackers | Stats → choisir le jeu → lier son ID. Valorant : rang + dernière partie avec alliés et adversaires. Apex : statut en direct |
 | Taille | Paramètres → Compact / Large (transition animée) |
 | Pilule permanente | Paramètres → « Pilule toujours visible » (désactivé = REZ disparaît complètement une fois réduit) |
 | Quitter | clic droit tray → Quitter, ou Paramètres → Quitter |
 | Épingler un dossier | glisser-déposer sur REZ, ou formulaire Accès rapide |
-| Chat IA | clé API Anthropic dans Paramètres (modèle par défaut `claude-opus-5-5`) |
+| Chat IA | Optionnel. Vue IA → Claude / ChatGPT / Gemini → « Obtenir une clé » ouvre la page officielle. Modèles par défaut : `claude-opus-5-5`, `gpt-5-mini`, `gemini-2.5-flash` |
 | Stats Fortnite | clé gratuite sur fortnite-api.com → Paramètres |
 | Stats Valorant | clé gratuite HenrikDev (api.henrikdev.xyz, via leur Discord) → Paramètres |
 | Stats Apex | clé gratuite sur apexlegendsapi.com → Paramètres |

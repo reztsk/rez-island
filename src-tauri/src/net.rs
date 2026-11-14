@@ -1,5 +1,5 @@
 //! APIs publiques : météo (Open-Meteo), pochettes (iTunes), stats par pseudo (fortnite-api.com,
-//! HenrikDev Valorant, apexlegendsapi.com), chat IA (Claude API). Aucun accès aux jeux.
+//! HenrikDev Valorant, apexlegendsapi.com), chat IA (Claude, ChatGPT, Gemini), OAuth Discord. Aucun accès aux jeux.
 use crate::err;
 use serde_json::{json, Value};
 use std::sync::OnceLock;
@@ -362,4 +362,97 @@ pub async fn claude(key: &str, model: &str, history: Vec<Value>) -> Result<Strin
         })
         .unwrap_or_default();
     Ok(text)
+}
+
+/// 20 derniers messages, en commençant par l'utilisateur.
+fn trim_history(history: Vec<Value>) -> Result<Vec<Value>, String> {
+    let start = history.len().saturating_sub(20);
+    let mut msgs: Vec<Value> = history[start..].to_vec();
+    while msgs.first().map(|m| m["role"] != "user").unwrap_or(false) {
+        msgs.remove(0);
+    }
+    if msgs.is_empty() {
+        return Err("Message vide".into());
+    }
+    Ok(msgs)
+}
+
+fn api_err(status: reqwest::StatusCode, v: &Value) -> String {
+    let msg = v["error"]["message"].as_str().or(v["error"].as_str()).unwrap_or("erreur inconnue");
+    format!("API {} : {msg}", status.as_u16())
+}
+
+/// ChatGPT (API OpenAI, Chat Completions).
+pub async fn openai(key: &str, model: &str, history: Vec<Value>) -> Result<String, String> {
+    if key.is_empty() {
+        return Err("Clé API OpenAI manquante".into());
+    }
+    let model = if model.trim().is_empty() { "gpt-5-mini" } else { model.trim() };
+    let mut msgs = vec![json!({ "role": "system", "content": SYSTEM })];
+    msgs.extend(trim_history(history)?);
+    let r = client()
+        .post("https://api.openai.com/v1/chat/completions")
+        .bearer_auth(key)
+        .json(&json!({ "model": model, "messages": msgs }))
+        .send()
+        .await
+        .map_err(err)?;
+    let status = r.status();
+    let v: Value = r.json().await.map_err(err)?;
+    if !status.is_success() {
+        return Err(api_err(status, &v));
+    }
+    Ok(v["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string())
+}
+
+/// Gemini (API Google AI Studio).
+pub async fn gemini(key: &str, model: &str, history: Vec<Value>) -> Result<String, String> {
+    if key.is_empty() {
+        return Err("Clé API Gemini manquante".into());
+    }
+    let model = if model.trim().is_empty() { "gemini-2.5-flash" } else { model.trim() };
+    let contents: Vec<Value> = trim_history(history)?
+        .iter()
+        .map(|m| {
+            let role = if m["role"] == "assistant" { "model" } else { "user" };
+            json!({ "role": role, "parts": [{ "text": m["content"] }] })
+        })
+        .collect();
+    let r = client()
+        .post(format!("https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent", urlenc(model)))
+        .header("x-goog-api-key", key)
+        .json(&json!({ "system_instruction": { "parts": [{ "text": SYSTEM }] }, "contents": contents }))
+        .send()
+        .await
+        .map_err(err)?;
+    let status = r.status();
+    let v: Value = r.json().await.map_err(err)?;
+    if !status.is_success() {
+        return Err(api_err(status, &v));
+    }
+    let text = v["candidates"][0]["content"]["parts"]
+        .as_array()
+        .map(|p| p.iter().filter_map(|x| x["text"].as_str()).collect::<Vec<_>>().join(""))
+        .unwrap_or_default();
+    if text.is_empty() && v["promptFeedback"]["blockReason"].is_string() {
+        return Err("Requête refusée par le modèle.".into());
+    }
+    Ok(text)
+}
+
+/// Échange / rafraîchissement OAuth2 Discord (vocal RPC).
+pub async fn discord_oauth(form: Vec<(&'static str, String)>) -> Result<Value, String> {
+    let r = client()
+        .post("https://discord.com/api/oauth2/token")
+        .form(&form)
+        .send()
+        .await
+        .map_err(err)?;
+    let ok = r.status().is_success();
+    let v: Value = r.json().await.unwrap_or(Value::Null);
+    if !ok || v["access_token"].as_str().is_none() {
+        let m = v["error_description"].as_str().or(v["error"].as_str()).unwrap_or("refusé par Discord");
+        return Err(m.to_string());
+    }
+    Ok(v)
 }

@@ -15,9 +15,11 @@
     <span class="pf-left"><span class="dot" id="pillDot"></span><span id="pillTime">--:--</span></span>
     <span class="pf-right">
       <img class="pill-art hidden" id="pillArt" alt="">
+      <span class="pill-voice hidden" id="pillVoice"></span>
       <span id="pillInfo"></span>
       <span class="bars hidden" id="pillBars"><i></i><i></i><i></i></span>
     </span>
+    <i class="pill-prog hidden" id="pillProg"><i></i></i>
   </button>
 
   <!-- ÉTAT OUVERT -->
@@ -26,7 +28,7 @@
       <span class="brand"><img src="logo.png" alt="">REZ</span>
       <span class="top-time"><b id="time">00:00</b><span id="date"></span></span>
       <span class="top-btns">
-        <button class="icon-btn hidden" id="btnLock" title="Reverrouiller en haut"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></button>
+        <button class="icon-btn hidden" id="btnLock" title="Verrouiller à cet endroit"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></button>
         <button class="icon-btn" id="btnCollapse" title="Réduire (Échap)"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
       </span>
     </header>
@@ -38,6 +40,7 @@
           <button data-sub="ov" class="on">Aperçu</button>
           <button data-sub="wx">Météo</button>
           <button data-sub="tools">Outils</button>
+          <button data-sub="dl">Téléch.<i class="tab-dot hidden" id="dlDot"></i></button>
         </div>
 
         <!-- Aperçu -->
@@ -66,17 +69,27 @@
               <button class="ctl xs" data-media="next" title="Suivant"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8V4zM19 5v14"/></svg></button>
             </div>
           </div>
+          <div class="card sysw">
+            <div class="row between"><span class="wg-h">Système</span><small class="gpu-name" id="gpuName"></small></div>
+            <div class="gauges">
+              <div class="gauge" id="gCpu"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>CPU</span><em class="temp">—</em></div>
+              <div class="gauge" id="gGpu"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>GPU</span><em class="temp">—</em></div>
+              <div class="gauge" id="gRam"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>RAM</span><em>—</em></div>
+              <div class="gauge" id="gVram"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>VRAM</span><em>—</em></div>
+            </div>
+          </div>
           <div class="widgets">
             <button class="wg" id="wgFocus" data-sub-go="tools">
               <span class="wg-h">Focus</span>
               <b id="wgFocusVal">25:00</b>
               <small id="wgFocusTxt">Prêt</small>
             </button>
-            <div class="wg">
-              <span class="wg-h">Système</span>
-              <div class="meter"><span>CPU</span><div><i id="cpuBar"></i></div><b id="cpuVal">0%</b></div>
-              <div class="meter"><span>RAM</span><div><i id="ramBar"></i></div><b id="ramVal">0%</b></div>
-            </div>
+            <button class="wg dlw" id="wgDl" data-sub-go="dl">
+              <span class="wg-h">Téléchargements</span>
+              <b id="wgDlVal">Aucun</b>
+              <small id="wgDlSub">↓ 0 Ko/s</small>
+              <div class="bar"><i id="wgDlBar"></i></div>
+            </button>
             <button class="wg" data-go="discord">
               <span class="wg-h">Discord</span>
               <span class="who"><img class="pp hidden" id="wgPP" alt=""><span class="pp ph" id="wgPPph">?</span><span class="who-t"><b id="wgDName">Hors ligne</b><small id="wgDSub">—</small></span></span>
@@ -107,6 +120,16 @@
           <div class="wx-grid" id="wxGrid"></div>
           <div class="hourly" id="wxHours"></div>
           <div class="days" id="wxDays"></div>
+        </div>
+
+        <!-- Téléchargements -->
+        <div class="sub" data-sub="dl">
+          <div class="card net">
+            <span class="net-ico">↓</span>
+            <div class="grow"><b id="netVal">0 Ko/s</b><small>Débit descendant du PC</small></div>
+          </div>
+          <div id="dlList"></div>
+          <p class="hint">Steam (progression exacte), qBittorrent (API Web locale), navigateurs et torrents du dossier Téléchargements. Epic, EA, Battle.net et Ubisoft ne publient pas leur progression : REZ affiche alors le débit réseau.</p>
         </div>
 
         <!-- Outils -->
@@ -146,6 +169,11 @@
 
       <!-- MULTIMÉDIA -->
       <section class="view" data-view="media">
+        <div class="tabs" id="mTabs">
+          <button data-msub="player" class="on">Lecteur</button>
+          <button data-msub="mix">Mélangeur audio</button>
+        </div>
+        <div class="msub on" data-msub="player">
         <div class="player">
           <div class="cover big" id="mCover"><img alt=""><span class="ph">♪</span><i class="app-badge"></i></div>
           <div class="meta">
@@ -171,6 +199,11 @@
           <input type="range" id="mVol" min="0" max="100" value="50">
           <span id="mVolVal">50</span>
         </div>
+        </div>
+        <div class="msub" data-msub="mix">
+          <div id="mixList"></div>
+          <p class="hint">Chaque application qui joue du son a son propre volume, comme dans le mélangeur de Windows.</p>
+        </div>
       </section>
 
       <!-- DISCORD -->
@@ -183,6 +216,28 @@
             <span class="status" id="dStatus">Hors ligne</span>
           </div>
           <button class="btn sm" id="dOpen">Ouvrir</button>
+        </div>
+        <div class="card voice hidden" id="vCard">
+          <div class="row between">
+            <span class="v-ch"><span class="wg-h" id="vGuild">Vocal</span><b id="vChan">Pas en vocal</b></span>
+            <span class="chip" id="vCount"></span>
+          </div>
+          <div class="v-members" id="vMembers"></div>
+          <div class="v-ctl">
+            <button class="vbtn" id="vMute" title="Couper / activer le micro"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/><path class="x" d="M4 4l16 16"/></svg></button>
+            <button class="vbtn" id="vDeaf" title="Couper / activer le casque"><svg viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0116 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/><path class="x" d="M4 4l16 16"/></svg></button>
+            <button class="vbtn hang" id="vLeave" title="Quitter le vocal / raccrocher"><svg viewBox="0 0 24 24"><path d="M3 14.5c5-4.7 13-4.7 18 0l-2.3 2.6-3.6-1.4v-2.4a10 10 0 00-6.2 0v2.4l-3.6 1.4z"/></svg></button>
+          </div>
+        </div>
+        <div class="card form vsetup hidden" id="vSetup">
+          <span class="wg-h">Vocal en direct</span>
+          <small class="hint" id="vSetupTxt">Membres du salon, qui parle, micro / casque / raccrocher depuis l'île.</small>
+          <input id="vSecret" type="password" autocomplete="off" placeholder="Client Secret de ton app Discord">
+          <div class="row">
+            <button class="btn primary grow" id="vAuth">Activer le vocal</button>
+            <button class="btn sm" id="vPortal" title="Portail développeur Discord">Portail ↗</button>
+          </div>
+          <small class="hint">Portail → ton app → OAuth2 : copie le Client Secret et ajoute la redirection <b>http://localhost</b>. Discord te demandera d'autoriser REZ (une seule fois).</small>
         </div>
         <div class="card act">
           <span class="wg-h">Activité diffusée</span>
@@ -226,6 +281,20 @@
 
       <!-- CHAT IA -->
       <section class="view chat-view" data-view="ai">
+        <div class="ai-bar">
+          <div class="tabs prov" id="aProv">
+            <button data-prov="claude">Claude</button><button data-prov="openai">ChatGPT</button><button data-prov="gemini">Gemini</button>
+          </div>
+          <button class="icon-btn" id="aCfgBtn" title="Clé API et modèle"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg></button>
+        </div>
+        <div class="card form ai-cfg hidden" id="aCfg">
+          <label><span>Clé API <span id="aKeyName">Anthropic</span></span>
+            <span class="row"><input id="aKey" class="grow" type="password" autocomplete="off" placeholder="Colle ta clé ici"><button type="button" class="btn sm" id="aKeyLink">Obtenir une clé ↗</button></span>
+          </label>
+          <label>Modèle<input id="aModel" autocomplete="off"></label>
+          <button class="btn primary" id="aSave">Enregistrer</button>
+          <small class="hint">Optionnel : tout le reste de REZ marche sans clé. Elle est chiffrée sur ton PC (DPAPI) et envoyée uniquement au fournisseur choisi.</small>
+        </div>
         <div class="chat" id="aLog"><div class="msg bot">Salut, je suis REZ. Pose ta question.</div></div>
         <form class="chat-in" id="aForm">
           <button type="button" class="icon-btn" id="aClear" title="Effacer"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
@@ -253,6 +322,10 @@
         <div class="card form">
           <span class="wg-h">Apparence</span>
           <label>Opacité du verre <b id="pOpVal" class="val">72%</b><input type="range" id="pOpacity" min="25" max="100" value="72"></label>
+          <span class="lbl">Position</span>
+          <div class="seg three" id="pDock">
+            <button data-dock="top">Haut</button><button data-dock="left">Gauche</button><button data-dock="right">Droite</button><i></i>
+          </div>
           <label class="tog"><input type="checkbox" id="pUnlock"><span></span>Déverrouiller l'emplacement</label>
           <small class="hint" id="pUnlockHint">Glisse l'île où tu veux, sur n'importe quel écran.</small>
           <label class="tog"><input type="checkbox" id="pPill"><span></span>Pilule toujours visible</label>
@@ -267,12 +340,11 @@
           <span class="wg-h">Services</span>
           <label>Ville météo<input id="pCity" autocomplete="off"></label>
           <label>Discord Client ID<input id="pDiscord" inputmode="numeric"></label>
+          <label>Discord Client Secret (vocal)<input id="pDSecret" type="password" autocomplete="off"></label>
           <label class="tog"><input type="checkbox" id="pDAuto"><span></span>Présence auto selon le jeu lancé</label>
           <label>Clé fortnite-api.com<input id="pFn" type="password" autocomplete="off"></label>
           <label>Clé HenrikDev (Valorant)<input id="pHenrik" type="password" autocomplete="off"></label>
           <label>Clé apexlegendsapi.com<input id="pApex" type="password" autocomplete="off"></label>
-          <label>Clé API Anthropic<input id="pAi" type="password" autocomplete="off"></label>
-          <label>Modèle IA<input id="pModel" placeholder="claude-opus-5-5"></label>
           <label class="tog"><input type="checkbox" id="pAuto"><span></span>Lancer avec Windows</label>
           <button class="btn primary" id="pSave">Enregistrer</button>
         </div>

@@ -1,13 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod audio;
 mod discord;
+mod downloads;
 mod games;
+mod hw;
 mod media;
 mod net;
 mod secure;
 mod settings;
 mod sys;
 mod updater;
+mod voice;
 
 use serde_json::{json, Value};
 use settings::Settings;
@@ -15,6 +19,7 @@ use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::mpsc::Sender;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
@@ -37,6 +42,8 @@ struct Live {
     manual_since: u64,
     last_sent: Option<Value>,
     retry_at: u64,
+    downloads: Vec<Value>,
+    net: f64,
 }
 
 pub struct AppState {
@@ -47,6 +54,13 @@ pub struct AppState {
     /// Jusqu'à quand (ms) les déplacements de fenêtre viennent de REZ et non de l'utilisateur.
     self_move: AtomicU64,
     anchor_gen: AtomicU64,
+    voice_tx: Mutex<Sender<voice::Cmd>>,
+    /// Dernier état du vocal Discord envoyé au front.
+    voice: Mutex<Value>,
+}
+
+fn voice_send(app: &AppHandle, cmd: voice::Cmd) {
+    let _ = app.state::<AppState>().voice_tx.lock().unwrap().send(cmd);
 }
 
 pub fn err<E: std::fmt::Display>(e: E) -> String {
@@ -64,40 +78,114 @@ fn now_s() -> u64 {
     now_ms() / 1000
 }
 
-// ---------- fenêtre : île ancrée en haut, ou libre si déverrouillée ----------
-/// `width`/`height` en px physiques.
-fn place(w: &WebviewWindow, width: i32, height: i32) {
-    let st = w.app_handle().state::<AppState>();
-    let (locked, anchor) = {
-        let s = st.settings.lock().unwrap();
-        (s.locked, s.anchor)
-    };
-    st.self_move.store(now_ms() + 400, Relaxed);
-    if let (false, Some((ax, ay))) = (locked, anchor) {
-        let mons = w.available_monitors().unwrap_or_default();
-        let m = mons.iter().find(|m| {
-            let (p, s) = (m.position(), m.size());
-            ax >= p.x && ax < p.x + s.width as i32 && ay >= p.y && ay < p.y + s.height as i32
-        });
-        if let Some(m) = m {
-            let (p, s) = (m.position(), m.size());
-            let x = (ax - width / 2).min(p.x + s.width as i32 - width).max(p.x);
-            let y = ay.min(p.y + s.height as i32 - height).max(p.y);
-            let _ = w.set_position(PhysicalPosition::new(x, y));
-            return;
+// ---------- fenêtre : préréglage (haut / gauche / droite) ou position libre mémorisée ----------
+type Rect = (i32, i32, i32, i32);
+
+fn monitors(w: &WebviewWindow) -> Vec<Rect> {
+    w.available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32))
+        .collect()
+}
+
+fn rect_at(mons: &[Rect], x: i32, y: i32) -> Option<Rect> {
+    mons.iter().copied().find(|&(mx, my, mw, mh)| x >= mx && x < mx + mw && y >= my && y < my + mh)
+}
+
+/// Écran où se trouve l'île (sinon l'écran principal).
+fn current_rect(w: &WebviewWindow, mons: &[Rect]) -> Option<Rect> {
+    if let (Ok(p), Ok(s)) = (w.outer_position(), w.outer_size()) {
+        if let Some(r) = rect_at(mons, p.x + s.width as i32 / 2, p.y + s.height as i32 / 2) {
+            return Some(r);
         }
     }
-    if let Ok(Some(m)) = w.primary_monitor() {
-        let (ms, mp) = (m.size(), m.position());
-        let x = mp.x + (ms.width as i32 - width) / 2;
-        let _ = w.set_position(PhysicalPosition::new(x, mp.y));
+    w.primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| (m.position().x, m.position().y, m.size().width as i32, m.size().height as i32))
+        .or_else(|| mons.first().copied())
+}
+
+/// Ancre + alignement d'un préréglage sur l'écran `m`.
+fn preset(dock: &str, m: Rect) -> ((i32, i32), &'static str) {
+    let (x, y, w, h) = m;
+    match dock {
+        "left" => ((x, y + h / 2), "lm"),
+        "right" => ((x + w, y + h / 2), "rm"),
+        _ => ((x + w / 2, y), "ct"),
     }
+}
+
+/// Place la fenêtre (`width`/`height` px physiques) : l'ancre reste fixe et l'île grandit
+/// vers l'intérieur de l'écran. Verrouiller ne déplace JAMAIS l'île. Renvoie l'alignement.
+fn place(w: &WebviewWindow, width: i32, height: i32) -> String {
+    let st = w.app_handle().state::<AppState>();
+    let (dock, anchor, align) = {
+        let s = st.settings.lock().unwrap();
+        (s.dock.clone(), s.anchor, s.align.clone())
+    };
+    st.self_move.store(now_ms() + 400, Relaxed);
+    let mons = monitors(w);
+    let mut target: Option<(Rect, (i32, i32), String)> = None;
+    if let ("free", Some((ax, ay))) = (dock.as_str(), anchor) {
+        let b = align.as_bytes();
+        let px = if b[0] == b'r' { ax - 1 } else { ax };
+        let py = if b[1] == b'b' { ay - 1 } else { ay };
+        if let Some(m) = rect_at(&mons, px, py) {
+            target = Some((m, (ax, ay), align));
+        }
+    }
+    if target.is_none() {
+        let Some(m) = current_rect(w, &mons) else { return "ct".into() };
+        let (a, al) = preset(if dock == "free" { "top" } else { &dock }, m);
+        target = Some((m, a, al.to_string()));
+    }
+    let ((mx, my, mw, mh), (ax, ay), al) = target.unwrap();
+    let b = al.as_bytes();
+    let x = match b[0] {
+        b'l' => ax,
+        b'r' => ax - width,
+        _ => ax - width / 2,
+    };
+    let y = match b[1] {
+        b'b' => ay - height,
+        b'm' => ay - height / 2,
+        _ => ay,
+    };
+    let x = x.min(mx + mw - width).max(mx);
+    let y = y.min(my + mh - height).max(my);
+    let _ = w.set_position(PhysicalPosition::new(x, y));
+    al
+}
+
+/// Glisser-déposer : nouvelle ancre selon la zone de l'écran où l'île est posée.
+fn anchor_from(mons: &[Rect], x: i32, y: i32, wd: i32, ht: i32) -> Option<((i32, i32), String)> {
+    let (cx, cy) = (x + wd / 2, y + ht / 2);
+    let (mx, my, mw, mh) = rect_at(mons, cx, cy)?;
+    let rx = (cx - mx) as f64 / mw as f64;
+    let ry = (cy - my) as f64 / mh as f64;
+    let h = if rx < 0.34 { 'l' } else if rx > 0.66 { 'r' } else { 'c' };
+    let v = if ry > 0.5 { 'b' } else { 't' };
+    let ax = match h {
+        'l' => x,
+        'r' => x + wd,
+        _ => cx,
+    };
+    let ay = if v == 'b' { y + ht } else { y };
+    Some(((ax, ay), format!("{h}{v}")))
 }
 
 fn replace_window(w: &WebviewWindow) {
     if let Ok(sz) = w.outer_size() {
-        place(w, sz.width as i32, sz.height as i32);
+        let al = place(w, sz.width as i32, sz.height as i32);
+        emit_align(w.app_handle(), &al);
     }
+}
+
+fn emit_align(app: &AppHandle, align: &str) {
+    let dock = app.state::<AppState>().settings.lock().unwrap().dock.clone();
+    let _ = app.emit("rez://align", json!({ "dock": dock, "align": align }));
 }
 
 fn show(app: &AppHandle) {
@@ -249,6 +337,8 @@ fn snapshot(app: &AppHandle) -> Value {
             "activity": if act.is_null() { Value::Null } else { json!({ "details": act["details"], "state": act["state"] }) },
         },
         "focus_until": if focus_until > now_s() { focus_until } else { 0 },
+        "downloads": l.downloads,
+        "net": (l.net / 1000.0).round() * 1000.0,
     })
 }
 
@@ -265,15 +355,21 @@ fn focus_end(app: &AppHandle) {
     let _ = settings::save(app, &c);
 }
 
-/// Boucle légère (4 s) : jeu en cours (noms de processus), Discord, fin du Mode Focus.
+/// Boucle légère (4 s, 2 s pendant un téléchargement) : jeu en cours (noms de processus), Discord,
+/// téléchargements, fin du Mode Focus.
 fn monitor(app: AppHandle) {
     let mut last = Value::Null;
+    let dl_dir = app.path().download_dir().ok();
     loop {
         let scan = games::scan();
+        let (dls, net) = downloads::scan(&scan.procs, dl_dir.as_deref());
+        let busy = !dls.is_empty();
         {
             let st = app.state::<AppState>();
             let mut l = st.live.lock().unwrap();
             l.discord_running = scan.discord;
+            l.downloads = dls;
+            l.net = net;
             let same = matches!((&l.game, &scan.game), (Some(a), Some(b)) if a.0 == b.0);
             if !same {
                 l.game = scan.game.map(|(id, name)| (id, name, now_s()));
@@ -292,7 +388,7 @@ fn monitor(app: AppHandle) {
             let _ = app.emit("rez://live", &snap);
             last = snap;
         }
-        std::thread::sleep(Duration::from_secs(4));
+        std::thread::sleep(Duration::from_secs(if busy { 2 } else { 4 }));
     }
 }
 
@@ -316,8 +412,24 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut s: Settings) -> Res
     s.unmask_from(&old);
     // champs gérés uniquement par le backend
     s.anchor = old.anchor;
+    s.align = old.align.clone();
     s.focus_until = old.focus_until;
     s.focus_prev = old.focus_prev.clone();
+    s.discord_token = old.discord_token.clone();
+    if s.discord_client_id.trim() != old.discord_client_id.trim() || s.discord_secret != old.discord_secret {
+        s.discord_token.clear(); // autre app Discord -> nouvelle autorisation vocale
+    }
+    if !matches!(s.ai_provider.as_str(), "claude" | "openai" | "gemini") {
+        s.ai_provider = "claude".into();
+    }
+    if !matches!(s.dock.as_str(), "top" | "left" | "right" | "free") || (s.dock == "free" && s.anchor.is_none()) {
+        s.dock = old.dock.clone();
+    }
+    let dock_changed = s.dock != old.dock;
+    if dock_changed && s.dock != "free" {
+        s.anchor = None;
+        s.align = preset(&s.dock, (0, 0, 2, 2)).1.to_string();
+    }
     s.opacity = s.opacity.clamp(0.25, 1.0);
     s.shortcut = s.shortcut.trim().to_string();
     s.hide_shortcut = s.hide_shortcut.trim().to_string();
@@ -337,21 +449,16 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut s: Settings) -> Res
         let al = app.autolaunch();
         if s.autostart { al.enable() } else { al.disable() }.map_err(err)?;
     }
-    let w = app.get_webview_window("main");
-    if !s.locked && s.anchor.is_none() {
-        // déverrouillage : l'ancre part de la position actuelle
-        if let Some(w) = &w {
-            if let (Ok(p), Ok(sz)) = (w.outer_position(), w.outer_size()) {
-                s.anchor = Some((p.x + sz.width as i32 / 2, p.y));
-            }
-        }
-    }
+    // (re)verrouiller garde la position actuelle : seul un changement de préréglage déplace l'île
     settings::save(&app, &s)?;
     *state.settings.lock().unwrap() = s.clone();
-    if s.locked != old.locked {
-        if let Some(w) = &w {
-            replace_window(w);
+    if dock_changed {
+        if let Some(w) = app.get_webview_window("main") {
+            replace_window(&w);
         }
+    }
+    if s.discord_token != old.discord_token {
+        voice_send(&app, voice::Cmd::Reset);
     }
     if s.discord_client_id != old.discord_client_id || s.discord_auto != old.discord_auto {
         if s.discord_client_id != old.discord_client_id {
@@ -369,15 +476,18 @@ fn hide_window(app: AppHandle) {
 
 /// Redimensionne la fenêtre à la taille de l'île (px logiques) et la replace.
 #[tauri::command]
-fn island_fit(app: AppHandle, width: f64, height: f64, focus: bool) {
+fn island_fit(app: AppHandle, width: f64, height: f64, focus: bool) -> Value {
+    let mut al = "ct".to_string();
     if let Some(w) = app.get_webview_window("main") {
         let scale = w.scale_factor().unwrap_or(1.0);
         let _ = w.set_size(LogicalSize::new(width, height));
-        place(&w, (width * scale).round() as i32, (height * scale).round() as i32);
+        al = place(&w, (width * scale).round() as i32, (height * scale).round() as i32);
         if focus {
             let _ = w.set_focus();
         }
     }
+    let dock = app.state::<AppState>().settings.lock().unwrap().dock.clone();
+    json!({ "dock": dock, "align": al })
 }
 
 /// Glisser-déposer natif (uniquement quand l'île est déverrouillée).
@@ -411,9 +521,62 @@ fn app_version(app: AppHandle) -> String {
 }
 
 #[tauri::command]
-fn sys_info() -> Value {
-    let (cpu, ram, used, total) = sys::info();
-    json!({ "cpu": cpu, "ram": ram, "used": used, "total": total })
+async fn sys_info() -> Result<Value, String> {
+    blocking(|| {
+        let (cpu, ram, used, total) = sys::info();
+        let mut v = hw::sensors();
+        v["cpu"] = json!(cpu);
+        v["ram"] = json!(ram);
+        v["used"] = json!(used);
+        v["total"] = json!(total);
+        Ok(v)
+    })
+    .await
+}
+
+// ---------- commandes : mélangeur audio ----------
+#[tauri::command]
+async fn mixer_list() -> Result<Vec<Value>, String> {
+    blocking(audio::list).await
+}
+
+#[tauri::command]
+async fn mixer_set(key: String, volume: Option<f32>, muted: Option<bool>) -> Result<(), String> {
+    blocking(move || audio::set(&key, volume, muted)).await
+}
+
+// ---------- commandes : vocal Discord ----------
+#[tauri::command]
+fn voice_state(state: State<AppState>) -> Value {
+    state.voice.lock().unwrap().clone()
+}
+
+/// Autorise REZ dans Discord (fenêtre affichée par Discord), une seule fois.
+#[tauri::command]
+async fn voice_auth(app: AppHandle) -> Result<(), String> {
+    blocking(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        voice_send(&app, voice::Cmd::Auth(tx));
+        rx.recv_timeout(Duration::from_secs(240)).map_err(|_| "Délai dépassé".to_string())?
+    })
+    .await
+}
+
+#[tauri::command]
+fn voice_cmd(app: AppHandle, action: String, on: bool) -> Result<(), String> {
+    let cmd = match action.as_str() {
+        "mute" => voice::Cmd::Mute(on),
+        "deaf" => voice::Cmd::Deaf(on),
+        "leave" => voice::Cmd::Leave,
+        "logout" => {
+            app.state::<AppState>().settings.lock().unwrap().discord_token.clear();
+            persist(&app);
+            voice::Cmd::Reset
+        }
+        _ => return Err("Action inconnue".into()),
+    };
+    voice_send(&app, cmd);
+    Ok(())
 }
 
 // ---------- commandes : fichiers / liens ----------
@@ -605,12 +768,21 @@ async fn apex_stats(app: AppHandle, name: String, platform: String) -> Result<Va
 
 #[tauri::command]
 async fn ai_chat(app: AppHandle, messages: Vec<Value>) -> Result<String, String> {
-    let (k, model) = {
+    let (provider, k, model) = {
         let st = app.state::<AppState>();
         let s = st.settings.lock().unwrap();
-        (s.ai_key.clone(), s.ai_model.clone())
+        let k = match s.ai_provider.as_str() {
+            "openai" => s.openai_key.clone(),
+            "gemini" => s.gemini_key.clone(),
+            _ => s.ai_key.clone(),
+        };
+        (s.ai_provider.clone(), k, s.ai_model.clone())
     };
-    net::claude(&k, &model, messages).await
+    match provider.as_str() {
+        "openai" => net::openai(&k, &model, messages).await,
+        "gemini" => net::gemini(&k, &model, messages).await,
+        _ => net::claude(&k, &model, messages).await,
+    }
 }
 
 // ---------- commandes : mise à jour ----------
@@ -637,7 +809,32 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
 }
 
 // ---------- main ----------
+/// `rez --diag` : affiche capteurs, mélangeur et téléchargements détectés (dépannage).
+fn diag() {
+    let _ = sys::info();
+    let _ = hw::sensors();
+    let _ = hw::net_down();
+    std::thread::sleep(Duration::from_millis(1500));
+    let scan = games::scan();
+    let dl = std::env::var("USERPROFILE").map(|p| Path::new(&p).join("Downloads")).ok();
+    let (dls, net) = downloads::scan(&scan.procs, dl.as_deref());
+    let out = json!({
+        "sys": sys::info(),
+        "sensors": hw::sensors(),
+        "mixer": audio::list(),
+        "downloads": dls,
+        "net": net,
+        "discord": scan.discord,
+        "game": scan.game.map(|g| g.1),
+    });
+    println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+}
+
 fn main() {
+    if std::env::args().any(|a| a == "--diag") {
+        diag();
+        return;
+    }
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| open(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
@@ -675,6 +872,7 @@ fn main() {
                 let _ = register_shortcuts(&handle, &s.shortcut, "");
             }
             let pill_mode = s.pill_mode;
+            let (vtx, vrx) = std::sync::mpsc::channel();
             app.manage(AppState {
                 settings: Mutex::new(s),
                 discord: Mutex::new(None),
@@ -682,6 +880,8 @@ fn main() {
                 update: Mutex::new(None),
                 self_move: AtomicU64::new(0),
                 anchor_gen: AtomicU64::new(0),
+                voice_tx: Mutex::new(vtx),
+                voice: Mutex::new(json!({ "status": "off" })),
             });
 
             let m_open = MenuItem::with_id(app, "open", "Ouvrir REZ", true, None::<&str>)?;
@@ -716,6 +916,8 @@ fn main() {
             }
             let h = handle.clone();
             std::thread::spawn(move || monitor(h));
+            let h = handle.clone();
+            std::thread::spawn(move || voice::run(h, vrx));
             Ok(())
         })
         .on_window_event(|w, ev| match ev {
@@ -727,19 +929,28 @@ fn main() {
                 let _ = w.app_handle().emit("rez://blur", ());
             }
             WindowEvent::Moved(p) => {
-                // glisser-déposer par l'utilisateur (île déverrouillée) -> nouvelle ancre, sauvegardée après 700 ms
+                // glisser-déposer par l'utilisateur (île déverrouillée) -> position libre, sauvegardée après 700 ms
                 let app = w.app_handle().clone();
                 let st = app.state::<AppState>();
                 if now_ms() < st.self_move.load(Relaxed) {
                     return;
                 }
-                {
+                if st.settings.lock().unwrap().locked {
+                    return;
+                }
+                let Some(win) = app.get_webview_window("main") else { return };
+                let (wd, ht) = win.outer_size().map(|z| (z.width as i32, z.height as i32)).unwrap_or((0, 0));
+                let Some((anchor, align)) = anchor_from(&monitors(&win), p.x, p.y, wd, ht) else { return };
+                let changed = {
                     let mut s = st.settings.lock().unwrap();
-                    if s.locked {
-                        return;
-                    }
-                    let width = w.outer_size().map(|z| z.width as i32).unwrap_or(0);
-                    s.anchor = Some((p.x + width / 2, p.y));
+                    let changed = s.dock != "free" || s.align != align;
+                    s.dock = "free".into();
+                    s.anchor = Some(anchor);
+                    s.align = align.clone();
+                    changed
+                };
+                if changed {
+                    emit_align(&app, &align);
                 }
                 let gen = st.anchor_gen.fetch_add(1, Relaxed) + 1;
                 std::thread::spawn(move || {
@@ -762,6 +973,11 @@ fn main() {
             quit_app,
             app_version,
             sys_info,
+            mixer_list,
+            mixer_set,
+            voice_state,
+            voice_auth,
+            voice_cmd,
             open_path,
             open_uri,
             launch,

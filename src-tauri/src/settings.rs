@@ -27,15 +27,26 @@ pub struct Settings {
     pub henrik_key: String,
     pub apex_key: String,
     pub ai_key: String,
+    pub openai_key: String,
+    pub gemini_key: String,
+    /// "claude" | "openai" | "gemini"
+    pub ai_provider: String,
     pub ai_model: String,
+    /// Vocal Discord (RPC) : secret de l'app + jetons OAuth (JSON), chiffrés DPAPI.
+    pub discord_secret: String,
+    pub discord_token: String,
     pub autostart: bool,
     pub hide_on_blur: bool,
     pub size: String,
     pub pill_mode: bool,
     pub opacity: f64,
     pub locked: bool,
-    /// Point d'ancrage (centre haut, px physiques) quand l'île est déverrouillée.
+    /// "top" | "left" | "right" (préréglages) | "free" (posée à la main, mémorisée dans `anchor`).
+    pub dock: String,
+    /// Point d'ancrage (px physiques) de l'île posée à la main…
     pub anchor: Option<(i32, i32)>,
+    /// …et le coin qu'il désigne : [l|c|r][t|m|b]. L'île grandit vers l'intérieur de l'écran.
+    pub align: String,
     /// ID joueur lié par jeu : fortnite, valorant, apex, r6, rl (+ "<jeu>_opt" plateforme/région).
     pub players: BTreeMap<String, String>,
     /// Mode Focus : fin (s, epoch) + valeurs registre d'origine à restaurer.
@@ -58,14 +69,21 @@ impl Default for Settings {
             henrik_key: String::new(),
             apex_key: String::new(),
             ai_key: String::new(),
+            openai_key: String::new(),
+            gemini_key: String::new(),
+            ai_provider: "claude".into(),
             ai_model: "claude-opus-5-5".into(),
+            discord_secret: String::new(),
+            discord_token: String::new(),
             autostart: false,
             hide_on_blur: false,
             size: "compact".into(),
             pill_mode: true,
             opacity: 0.72,
             locked: true,
+            dock: String::new(),
             anchor: None,
+            align: "ct".into(),
             players: BTreeMap::new(),
             focus_until: 0,
             focus_prev: BTreeMap::new(),
@@ -74,8 +92,17 @@ impl Default for Settings {
 }
 
 impl Settings {
-    fn keys_mut(&mut self) -> [&mut String; 4] {
-        [&mut self.ai_key, &mut self.fortnite_key, &mut self.henrik_key, &mut self.apex_key]
+    fn keys_mut(&mut self) -> [&mut String; 8] {
+        [
+            &mut self.ai_key,
+            &mut self.fortnite_key,
+            &mut self.henrik_key,
+            &mut self.apex_key,
+            &mut self.openai_key,
+            &mut self.gemini_key,
+            &mut self.discord_secret,
+            &mut self.discord_token,
+        ]
     }
     /// Remet les vraies clés quand le front renvoie le masque.
     pub fn unmask_from(&mut self, old: &Settings) {
@@ -124,6 +151,19 @@ pub fn load(app: &AppHandle) -> Settings {
         *k = secure::decrypt(k);
     }
     s.opacity = s.opacity.clamp(0.25, 1.0);
+    // v1.2 -> v1.4 : une ancre existante = île posée à la main (centre haut)
+    if !matches!(s.dock.as_str(), "top" | "left" | "right" | "free") {
+        s.dock = if s.anchor.is_some() { "free".into() } else { "top".into() };
+    }
+    if s.dock == "free" && s.anchor.is_none() {
+        s.dock = "top".into();
+    }
+    if s.align.len() != 2 {
+        s.align = "ct".into();
+    }
+    if !matches!(s.ai_provider.as_str(), "claude" | "openai" | "gemini") {
+        s.ai_provider = "claude".into();
+    }
     s
 }
 

@@ -11,8 +11,8 @@ const store = {
 
 // Tailles de l'île (px logiques) : pilule / ouverte
 const SIZES = {
-  compact: { pill: [210, 34], open: [360, 392] },
-  large:   { pill: [244, 40], open: [420, 456] },
+  compact: { pill: [210, 34], open: [360, 420] },
+  large:   { pill: [244, 40], open: [420, 488] },
 };
 const ANIM = 440;
 
@@ -48,12 +48,25 @@ const nowS = () => Date.now() / 1000;
 const mmss = (s) => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const num = (v, d = 0) => (v == null || v === '' ? '—' : Number(v).toLocaleString('fr-FR', { maximumFractionDigits: d }));
 const safeUrl = (u) => (typeof u === 'string' && /^https:\/\//.test(u) ? u : '');
+const size = (b) => { b = +b || 0; const u = ['o', 'Ko', 'Mo', 'Go', 'To']; let i = 0; while (b >= 1000 && i < 4) { b /= 1000; i++; } return `${num(b, b < 10 && i ? 1 : 0)} ${u[i]}`; };
+const rate = (b) => size(b) + '/s';
+const dur = (s) => { s = Math.round(s); if (s < 60) return `${s} s`; if (s < 3600) return `${Math.round(s / 60)} min`; const h = Math.floor(s / 3600); return `${h} h ${String(Math.round((s % 3600) / 60)).padStart(2, '0')}`; };
+let voice = { status: 'off', members: [] };
 
 // ---------- île : pilule <-> ouverte ----------
 async function fit(w, h, focus = false) {
   winW = w; winH = h;
-  try { await invoke('island_fit', { width: w, height: h, focus }); } catch {}
+  try { applyAlign(await invoke('island_fit', { width: w, height: h, focus })); } catch {}
 }
+// ancrage de l'île dans sa fenêtre : elle grandit vers l'intérieur de l'écran
+function applyAlign(a) {
+  if (!a?.align) return;
+  const b = document.body;
+  b.classList.remove('al-l', 'al-c', 'al-r', 'al-t', 'al-m', 'al-b', 'dock-top', 'dock-left', 'dock-right', 'dock-free');
+  b.classList.add('al-' + a.align[0], 'al-' + a.align[1], 'dock-' + (a.dock || 'top'));
+  if (a.dock && a.dock !== S.dock) { S.dock = a.dock; renderDock(); }
+}
+listen('rez://align', (e) => applyAlign(e.payload));
 function setVars(m) {
   const [w, h] = SIZES[sizeKey()][m];
   isl.style.setProperty('--w', w + 'px');
@@ -155,16 +168,18 @@ function onView() {
 
 // ---------- timers (tout est en pause quand REZ est masqué) ----------
 function focusLeft() { return live.focus_until ? live.focus_until - nowS() : 0; }
+let mixTimer = null, msub = 'player';
 function schedule() {
-  clearInterval(clockTimer); clearInterval(mediaTimer); clearInterval(sysTimer);
-  clockTimer = mediaTimer = sysTimer = null;
+  clearInterval(clockTimer); clearInterval(mediaTimer); clearInterval(sysTimer); clearInterval(mixTimer);
+  clockTimer = mediaTimer = sysTimer = mixTimer = null;
   if (!winVisible) return;
   tick();
   clockTimer = setInterval(tick, mode === 'open' || focusLeft() > 0 ? 1000 : 5000);
   const fast = mode === 'open' && ((view === 'home' && sub === 'ov') || view === 'media');
   refreshMedia();
   mediaTimer = setInterval(refreshMedia, fast ? 2000 : 5000);
-  if (mode === 'open' && view === 'home' && sub === 'ov') { refreshSys(); sysTimer = setInterval(refreshSys, 2500); }
+  if (mode === 'open' && view === 'home' && sub === 'ov') { refreshSys(); sysTimer = setInterval(refreshSys, 2000); }
+  if (mode === 'open' && view === 'media' && msub === 'mix') { refreshMix(); mixTimer = setInterval(refreshMix, 900); }
 }
 setInterval(() => { if (winVisible && Date.now() - lastWeather > 15 * 60e3) loadWeather(); }, 60e3);
 
@@ -302,20 +317,42 @@ function renderMediaMeta() {
   const browser = a && BROWSERS.includes(a.key);
   $('#mApp').textContent = a ? (browser && thumbVideo ? `${a.name} · vidéo` : a.name) : '';
 }
+// priorité : Focus > vocal Discord > téléchargement > musique > jeu > météo
 function renderPill() {
   const left = focusLeft();
   const playing = media?.playing && media?.has_session;
+  const ch = voice?.channel;
+  const dl = topDownload();
+  const dlPct = dl && dl.pct != null && dl.state !== 'En pause';
+  const what = left > 0 ? 'focus' : ch ? 'voice' : dlPct ? 'dl' : playing ? 'media' : live.game ? 'game' : dl ? 'dl' : 'wx';
   const info = $('#pillInfo');
   const dot = $('#pillDot');
-  dot.classList.toggle('focus', left > 0);
-  dot.classList.toggle('game', left <= 0 && !!live.game);
-  info.classList.toggle('focus', left > 0);
-  const showArt = left <= 0 && playing && $('#pillArt').dataset.ok === '1';
-  $('#pillArt').classList.toggle('hidden', !showArt);
-  $('#pillBars').classList.toggle('hidden', !(left <= 0 && playing));
-  if (left > 0) info.textContent = `Focus ${mmss(left)}`;
-  else if (playing) info.textContent = media.title || appInfo(media.app)?.name || '';
-  else if (live.game) info.textContent = `🎮 ${live.game.name}`;
+  dot.classList.toggle('focus', what === 'focus');
+  dot.classList.toggle('voice', what === 'voice');
+  dot.classList.toggle('dl', what === 'dl');
+  dot.classList.toggle('game', what === 'game' || (what === 'media' && !!live.game));
+  info.classList.toggle('focus', what === 'focus');
+  $('#pillArt').classList.toggle('hidden', !(what === 'media' && $('#pillArt').dataset.ok === '1'));
+  $('#pillBars').classList.toggle('hidden', what !== 'media');
+  // avatars du salon (ceux qui parlent d'abord)
+  const pv = $('#pillVoice');
+  if (what === 'voice') {
+    const ms = [...(voice.members || [])].sort((a, b) => b.speaking - a.speaking).slice(0, 3);
+    const html = ms.map((m) => safeUrl(m.avatar) ? `<img src="${esc(m.avatar)}" class="${m.speaking ? 'sp' : ''}" alt="">` : '').join('');
+    if (pv.innerHTML !== html) pv.innerHTML = html;
+  }
+  pv.classList.toggle('hidden', what !== 'voice');
+  // fine barre de progression du téléchargement, en bas de la pilule
+  const pp = $('#pillProg');
+  pp.classList.toggle('hidden', !(dl && dl.pct != null));
+  if (dl && dl.pct != null) pp.firstElementChild.style.width = dl.pct.toFixed(1) + '%';
+  if (what === 'focus') info.textContent = `Focus ${mmss(left)}`;
+  else if (what === 'voice') {
+    const sp = (voice.members || []).filter((m) => m.speaking && !m.me).map((m) => m.name);
+    info.textContent = sp.length ? sp.join(', ') : ch.name;
+  } else if (what === 'dl') info.textContent = dlPct ? `↓ ${Math.floor(dl.pct)}%${dl.eta != null ? ' · ' + dur(dl.eta) : ''}` : `↓ ${rate(dl.speed)}`;
+  else if (what === 'media') info.textContent = media.title || appInfo(media.app)?.name || '';
+  else if (what === 'game') info.textContent = `🎮 ${live.game.name}`;
   else info.textContent = weatherTxt;
 }
 function curPos() {
@@ -394,16 +431,127 @@ vol.addEventListener('input', () => {
 vol.addEventListener('change', () => { volDrag = false; });
 
 // ---------- système ----------
+function gauge(id, pct, sub, temp) {
+  const g = $(id);
+  const ok = pct != null && isFinite(pct);
+  g.querySelector('.arc').style.strokeDashoffset = ok ? 106.8 * (1 - Math.min(100, Math.max(0, pct)) / 100) : 106.8;
+  g.querySelector('b').textContent = ok ? Math.round(pct) + '%' : '—';
+  const em = g.querySelector('em');
+  if (temp !== undefined) {
+    em.textContent = temp != null ? Math.round(temp) + '°C' : '—';
+    em.className = 'temp' + (temp == null ? '' : temp >= 85 ? ' t-hot' : temp >= 70 ? ' t-warm' : ' t-ok');
+  } else em.textContent = sub;
+}
 async function refreshSys() {
   try {
     const s = await invoke('sys_info');
-    $('#cpuBar').style.width = s.cpu.toFixed(0) + '%';
-    $('#cpuVal').textContent = s.cpu.toFixed(0) + '%';
-    $('#ramBar').style.width = s.ram.toFixed(0) + '%';
-    $('#ramVal').textContent = s.ram.toFixed(0) + '%';
-    $('#ramVal').title = `${s.used.toFixed(1)} / ${s.total.toFixed(1)} Go`;
+    gauge('#gCpu', s.cpu, '', s.cpu_temp);
+    gauge('#gGpu', s.gpu, '', s.gpu_temp);
+    gauge('#gRam', s.ram, `${num(s.used, 1)}/${num(s.total, 0)} Go`);
+    const vp = s.vram_total ? (s.vram_used / s.vram_total) * 100 : null;
+    gauge('#gVram', vp, s.vram_total ? `${num(s.vram_used, 1)}/${num(s.vram_total, 0)} Go` : '—');
+    $('#gCpu em').title = s.cpu_temp == null ? 'Windows ne fournit pas la température CPU sur ce PC (il faudrait un pilote noyau, bloqué par les anti-cheats)' : 'Zone thermique ACPI';
+    $('#gpuName').textContent = s.gpu_name || '';
   } catch {}
 }
+
+// ---------- téléchargements ----------
+const topDownload = () => {
+  const d = live.downloads || [];
+  return d.find((x) => x.pct != null && x.state !== 'En pause') || d.find((x) => x.pct != null) || d[0] || null;
+};
+function renderDownloads() {
+  const d = live.downloads || [];
+  const top = topDownload();
+  $('#netVal').textContent = rate(live.net || 0);
+  $('#dlDot').classList.toggle('hidden', !d.length);
+  $('#wgDl').classList.toggle('on', !!d.length);
+  $('#wgDlVal').textContent = top ? (top.pct != null ? `${Math.floor(top.pct)}%` : rate(top.speed)) : 'Aucun';
+  $('#wgDlSub').textContent = top ? `${top.name}` : `↓ ${rate(live.net || 0)}`;
+  $('#wgDlBar').style.width = (top?.pct ?? 0) + '%';
+  $('#dlList').innerHTML = d.length ? d.map((x) => {
+    const known = x.pct != null;
+    const parts = [
+      known ? `${size(x.done)} / ${size(x.total)}` : x.done ? size(x.done) : '',
+      x.speed > 0 ? rate(x.speed) : '',
+      x.eta != null ? `reste ${dur(x.eta)}` : '',
+      x.state && x.state !== 'Téléchargement' ? x.state : '',
+    ].filter(Boolean).join(' · ');
+    return `<div class="card dl"><div class="dl-h"><span class="src">${esc(x.source)}</span><b title="${esc(x.name)}">${esc(x.name)}</b>${known ? `<span class="pct">${num(x.pct, 1)}%</span>` : ''}</div>
+      <div class="bar${known ? '' : ' ind'}"><i style="width:${known ? x.pct : 35}%"></i></div><small>${esc(parts)}</small></div>`;
+  }).join('') : '<p class="hint">Aucun téléchargement en cours.</p>';
+}
+
+// ---------- mélangeur audio ----------
+const EXES = {
+  '#system': ['Sons système', '#64748b', '🔔'], 'fortniteclient': ['Fortnite', '#9d4dff', 'F'], 'valorant': ['Valorant', '#ff4655', 'V'],
+  'r5apex': ['Apex Legends', '#da292a', 'A'], 'rainbowsix': ['Rainbow Six', '#3d8bfd', 'R'], 'rocketleague': ['Rocket League', '#1fa2ff', 'R'],
+  'cs2': ['Counter-Strike 2', '#de9b35', 'C'], 'league of legends': ['League of Legends', '#c89b3c', 'L'], 'medal': ['Medal', '#f5c518', 'M'],
+  'obs64': ['OBS', '#302e31', 'O'], 'steamwebhelper': ['Steam', '#1b2838', 'S'], 'teams': ['Teams', '#5b5fc7', 'T'], 'whatsapp': ['WhatsApp', '#25d366', 'W'],
+  'rtkuwp': ['Realtek Audio', '#4b5563', 'R'], 'nvcontainer': ['NVIDIA', '#76b900', 'N'], 'radeonsoftware': ['AMD Software', '#ed1c24', 'A'],
+};
+function exeInfo(exe) {
+  const k = Object.keys(EXES).find((x) => exe === x || exe.startsWith(x));
+  if (k) { const [name, color, glyph] = EXES[k]; return { name, color, glyph }; }
+  const a = APPS.find(([x]) => exe.includes(x));
+  if (a) return { name: a[1], color: a[2], glyph: a[3] };
+  const stem = exe.replace(/\.exe$/, '');
+  return { name: stem.charAt(0).toUpperCase() + stem.slice(1), color: '#6d28d9', glyph: esc(stem.charAt(0).toUpperCase() || '♪') };
+}
+let mixDrag = null, mixT;
+async function refreshMix() {
+  let list;
+  try { list = await invoke('mixer_list'); } catch (e) { $('#mixList').innerHTML = `<div class="card err">${esc(e)}</div>`; return; }
+  const box = $('#mixList');
+  if (!list.length) { box.innerHTML = '<p class="hint">Aucune application ne joue de son.</p>'; return; }
+  const keys = list.map((x) => x.key).join('|');
+  if (box.dataset.keys !== keys) {
+    box.dataset.keys = keys;
+    box.innerHTML = list.map((x) => {
+      const a = exeInfo(x.key);
+      return `<div class="mix" data-key="${esc(x.key)}"><span class="ico" style="background:${a.color}">${a.glyph}</span>
+        <div class="mix-m"><div class="mix-t"><b>${esc(a.name)}</b><span class="v"></span></div>
+        <input type="range" min="0" max="100"><div class="peak"><i></i></div></div>
+        <button class="icon-btn" title="Couper le son"><svg viewBox="0 0 24 24"></svg></button></div>`;
+    }).join('');
+  }
+  for (const x of list) {
+    const row = box.querySelector(`.mix[data-key="${CSS.escape(x.key)}"]`);
+    if (!row) continue;
+    row.classList.toggle('off', !x.active);
+    const v = Math.round(x.volume * 100);
+    if (mixDrag !== x.key) { setRange(row.querySelector('input'), v); row.querySelector('.v').textContent = x.muted ? 'Muet' : v + ' %'; }
+    row.querySelector('.peak i').style.width = (x.muted ? 0 : Math.min(100, x.peak * 140)) + '%';
+    const btn = row.querySelector('button');
+    btn.classList.toggle('on', x.muted);
+    btn.dataset.muted = x.muted ? '1' : '';
+    btn.querySelector('svg').innerHTML = x.muted ? ICON_MUTE : ICON_VOL;
+  }
+}
+$('#mixList').addEventListener('input', (e) => {
+  const r = e.target.closest('input[type=range]');
+  if (!r) return;
+  const key = r.closest('.mix').dataset.key;
+  mixDrag = key;
+  setRange(r, r.value);
+  r.closest('.mix').querySelector('.v').textContent = r.value + ' %';
+  clearTimeout(mixT);
+  mixT = setTimeout(() => invoke('mixer_set', { key, volume: r.value / 100, muted: null }).catch(() => {}), 30);
+});
+$('#mixList').addEventListener('change', () => { setTimeout(() => { mixDrag = null; }, 400); });
+$('#mixList').addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  try { await call('mixer_set', { key: b.closest('.mix').dataset.key, volume: null, muted: !b.dataset.muted }); refreshMix(); } catch {}
+});
+$('#mTabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-msub]');
+  if (!b) return;
+  msub = b.dataset.msub;
+  $$('#mTabs button').forEach((x) => x.classList.toggle('on', x === b));
+  $$('.msub').forEach((el) => el.classList.toggle('on', el.dataset.msub === msub));
+  schedule();
+});
 
 // ---------- état live : Discord, jeu, focus ----------
 let prevGame = null;
@@ -420,6 +568,7 @@ function onLive(l) {
   prevGame = gid;
   renderDiscord();
   renderGame();
+  renderDownloads();
   renderFocus();
   renderPill();
   if (!!before !== !!l.focus_until) schedule();
@@ -451,6 +600,7 @@ function renderDiscord() {
   $('#dActSub').textContent = a ? a.state : (S.discord_auto ? 'Lance un jeu : présence automatique' : 'Présence auto désactivée');
   $('#wgDName').textContent = u?.name || (d.running ? 'Discord' : 'Hors ligne');
   $('#wgDSub').textContent = a ? a.details : (u ? '@' + u.username : (d.running ? (d.error || 'Connexion…') : 'Discord fermé'));
+  if (voice.channel) renderVoice();
 }
 function renderGame() {
   const g = live.game;
@@ -515,6 +665,73 @@ $('#dSet').onclick = async () => {
 };
 $('#dClear').onclick = async () => { try { onLive(await call('discord_clear')); toast('Présence effacée'); } catch {} };
 $('#dOpen').onclick = () => call('open_uri', { uri: 'discord://-/channels/@me' }).catch(() => {});
+
+// ---------- discord : vocal en direct ----------
+const MIC_X = '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M4 4l16 16"/></svg>';
+const HEAD_X = '<svg viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0116 0v3M4 4l16 16"/></svg>';
+const VOICE_TXT = {
+  closed: 'Discord fermé', need_secret: 'Ajoute le Client Secret de ton app Discord pour voir ton salon vocal.',
+  need_auth: 'Autorise REZ une fois dans Discord pour afficher ton salon vocal.', authorizing: 'Clique « Autoriser » dans la fenêtre Discord…',
+  connecting: 'Connexion au vocal…', error: 'Vocal indisponible',
+};
+listen('rez://voice', (e) => onVoice(e.payload));
+function onVoice(v) {
+  if (!v) return;
+  voice = v;
+  renderVoice();
+  renderPill();
+}
+function renderVoice() {
+  const v = voice, ch = v.channel;
+  const ready = v.status === 'ready';
+  const setup = ['need_secret', 'need_auth', 'authorizing', 'error'].includes(v.status) && !!S.discord_client_id;
+  $('#vCard').classList.toggle('hidden', !ready);
+  $('#vSetup').classList.toggle('hidden', !setup);
+  $('#vSecret').classList.toggle('hidden', v.status !== 'need_secret');
+  $('#vSetupTxt').textContent = (v.status === 'error' && v.error) ? v.error : VOICE_TXT[v.status] || '';
+  $('#vAuth').textContent = v.status === 'error' ? 'Réessayer' : 'Activer le vocal';
+  $('#vAuth').disabled = v.status === 'authorizing';
+  if (ready) {
+    $('#vGuild').textContent = ch ? (ch.guild || 'Vocal') : 'Vocal';
+    $('#vChan').textContent = ch ? ch.name : 'Pas en vocal';
+    $('#vCount').textContent = ch ? `${v.members.length} 👤` : '';
+    // reconstruit seulement si la liste change ; sinon juste l'anneau « parle » (pas de clignotement)
+    const box = $('#vMembers');
+    const key = ch ? ch.id + v.members.map((m) => `|${m.id}${m.mute ? 'm' : ''}${m.deaf ? 'd' : ''}${m.name}${m.avatar}`).join('') : '';
+    if (box.dataset.key === key) {
+      v.members.forEach((m, i) => box.children[i]?.classList.toggle('sp', !!m.speaking));
+    } else box.dataset.key = key, box.innerHTML = ch ? v.members.map((m) => `<div class="vm${m.speaking ? ' sp' : ''}${m.me ? ' me' : ''}" title="${esc(m.name)}">
+      <span class="av">${safeUrl(m.avatar) ? `<img src="${esc(m.avatar)}" alt="">` : `<span class="ph">${esc(m.name.charAt(0).toUpperCase())}</span>`}
+      <span class="st">${m.mute ? `<i>${MIC_X}</i>` : ''}${m.deaf ? `<i>${HEAD_X}</i>` : ''}</span></span><small>${esc(m.name)}</small></div>`).join('') : '';
+    $('#vMute').classList.toggle('on', !!v.mute);
+    $('#vDeaf').classList.toggle('on', !!v.deaf);
+    $('#vLeave').disabled = !ch;
+  }
+  // widget Discord de l'accueil
+  if (ready && ch) {
+    const sp = v.members.filter((m) => m.speaking).map((m) => m.name);
+    $('#wgDName').textContent = '🔊 ' + ch.name;
+    $('#wgDSub').textContent = sp.length ? `${sp.join(', ')} parle` : `${v.members.length} dans le salon`;
+  }
+}
+async function voiceCmd(action, on = false) {
+  try { await call('voice_cmd', { action, on }); } catch {}
+}
+$('#vMute').onclick = () => voiceCmd('mute', !voice.mute);
+$('#vDeaf').onclick = () => voiceCmd('deaf', !voice.deaf);
+$('#vLeave').onclick = () => voiceCmd('leave');
+$('#vPortal').onclick = () => call('open_uri', { uri: 'https://discord.com/developers/applications' }).catch(() => {});
+$('#vAuth').onclick = async () => {
+  const sec = $('#vSecret').value.trim();
+  if (voice.status === 'need_secret') {
+    if (!sec) return toast('Colle le Client Secret', true);
+    if (!(await persist({ discord_secret: sec }))) return;
+    $('#vSecret').value = '';
+  }
+  const b = $('#vAuth'); b.disabled = true;
+  toast('Fenêtre d\'autorisation ouverte dans Discord');
+  try { await call('voice_auth'); toast('Vocal Discord activé'); } catch {} finally { b.disabled = false; }
+};
 
 // ---------- stats & trackers publics ----------
 const enc = encodeURIComponent;
@@ -633,7 +850,45 @@ function rApex(r, link) {
     <div class="row" style="margin-top:.5rem">${link}</div></div>`;
 }
 
-// ---------- chat IA ----------
+// ---------- chat IA : Claude / ChatGPT / Gemini (clé optionnelle) ----------
+const PROVIDERS = {
+  claude: { name: 'Claude', vendor: 'Anthropic', field: 'ai_key', model: 'claude-opus-5-5', url: 'https://console.anthropic.com/settings/keys', prefix: 'claude' },
+  openai: { name: 'ChatGPT', vendor: 'OpenAI', field: 'openai_key', model: 'gpt-5-mini', url: 'https://platform.openai.com/api-keys', prefix: 'gpt' },
+  gemini: { name: 'Gemini', vendor: 'Google AI Studio', field: 'gemini_key', model: 'gemini-2.5-flash', url: 'https://aistudio.google.com/app/apikey', prefix: 'gemini' },
+};
+let aiProv = 'claude';
+const hasKey = (p) => !!S[PROVIDERS[p].field];
+function renderAi() {
+  aiProv = PROVIDERS[S.ai_provider] ? S.ai_provider : 'claude';
+  const P = PROVIDERS[aiProv];
+  $$('#aProv button').forEach((b) => b.classList.toggle('on', b.dataset.prov === aiProv));
+  $('#aKeyName').textContent = P.vendor;
+  $('#aKey').value = S[P.field] || '';
+  $('#aKey').placeholder = `Clé ${P.vendor}`;
+  $('#aKeyLink').title = P.url;
+  const m = S.ai_model || '';
+  $('#aModel').value = m.toLowerCase().startsWith(P.prefix) || (aiProv === 'openai' && /^(o\d|chatgpt)/.test(m)) ? m : P.model;
+  $('#aModel').placeholder = P.model;
+  $('#aCfgBtn').classList.toggle('need', !hasKey(aiProv));
+  $('#aIn').placeholder = hasKey(aiProv) ? `Demande à ${P.name}…` : `Ajoute une clé ${P.vendor} pour discuter`;
+}
+$('#aProv').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-prov]');
+  if (!b || b.dataset.prov === aiProv) return;
+  const P = PROVIDERS[b.dataset.prov];
+  await persist({ ai_provider: b.dataset.prov, ai_model: P.model });
+  if (!hasKey(b.dataset.prov)) $('#aCfg').classList.remove('hidden');
+});
+$('#aCfgBtn').onclick = () => $('#aCfg').classList.toggle('hidden');
+$('#aKeyLink').onclick = () => call('open_uri', { uri: PROVIDERS[aiProv].url }).catch(() => {});
+$('#aSave').onclick = async () => {
+  const P = PROVIDERS[aiProv];
+  if (await persist({ [P.field]: $('#aKey').value.trim(), ai_model: $('#aModel').value.trim() || P.model })) {
+    toast(hasKey(aiProv) ? `${P.name} prêt` : 'Clé retirée');
+    if (hasKey(aiProv)) $('#aCfg').classList.add('hidden');
+  }
+};
+
 function addMsg(role, text, cls = '') {
   const d = document.createElement('div');
   d.className = `msg ${role === 'user' ? 'user' : 'bot'} ${cls}`;
@@ -649,6 +904,7 @@ $('#aForm').onsubmit = async (e) => {
   e.preventDefault();
   const text = aIn.value.trim();
   if (!text) return;
+  if (!hasKey(aiProv)) { $('#aCfg').classList.remove('hidden'); return toast(`Ajoute d'abord une clé ${PROVIDERS[aiProv].vendor}`, true); }
   aIn.value = ''; aIn.style.height = 'auto';
   chat.push({ role: 'user', content: text });
   addMsg('user', text);
@@ -768,8 +1024,27 @@ function applyLook() {
   document.body.classList.toggle('free', free);
   $('#btnLock').classList.toggle('hidden', !free);
   $('#pUnlock').checked = free;
-  $('#pUnlockHint').textContent = free ? 'Glisse la pilule ou l\'en-tête pour déplacer l\'île. 🔒 pour la reverrouiller.' : 'Île ancrée en haut de l\'écran principal.';
+  renderDock();
 }
+const DOCKS = { top: 'en haut', left: 'sur le côté gauche', right: 'sur le côté droit' };
+function renderDock() {
+  const d = S.dock || 'top';
+  const seg = $('#pDock');
+  const i = ['top', 'left', 'right'].indexOf(d);
+  seg.classList.toggle('p1', i === 1);
+  seg.classList.toggle('p2', i === 2);
+  seg.classList.toggle('none', i < 0);
+  $$('#pDock button').forEach((b) => b.classList.toggle('on', b.dataset.dock === d));
+  const where = DOCKS[d] || 'à l\'endroit où tu l\'as posée';
+  $('#pUnlockHint').textContent = S.locked === false
+    ? 'Glisse la pilule ou l\'en-tête où tu veux (multi-écrans). 🔒 la fige à cet endroit exact.'
+    : `Île verrouillée ${where}. Les panneaux s'ouvrent vers l'intérieur de l'écran.`;
+}
+$('#pDock').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-dock]');
+  if (!b || b.dataset.dock === S.dock) return;
+  if (await persist({ dock: b.dataset.dock })) toast(`Île ${DOCKS[b.dataset.dock]}`);
+});
 function fillSettings() {
   $('#pShortcut').value = S.shortcut;
   $('#pHide').value = S.hide_shortcut || '';
@@ -779,8 +1054,7 @@ function fillSettings() {
   $('#pFn').value = S.fortnite_key;
   $('#pHenrik').value = S.henrik_key;
   $('#pApex').value = S.apex_key;
-  $('#pAi').value = S.ai_key;
-  $('#pModel').value = S.ai_model;
+  $('#pDSecret').value = S.discord_secret;
   $('#pAuto').checked = S.autostart;
   $('#pBlur').checked = S.hide_on_blur;
   $('#pPill').checked = S.pill_mode;
@@ -788,6 +1062,8 @@ function fillSettings() {
   $('#dState').value = S.discord_state;
   applyLook();
   renderPins();
+  renderAi();
+  renderVoice();
 }
 async function persist(extra = {}) {
   try {
@@ -797,7 +1073,7 @@ async function persist(extra = {}) {
   } catch { return false; }
 }
 async function setLocked(locked) {
-  if (await persist({ locked })) toast(locked ? 'Île reverrouillée en haut' : 'Déverrouillée : glisse l\'île où tu veux');
+  if (await persist({ locked })) toast(locked ? 'Position verrouillée ici' : 'Déverrouillée : glisse l\'île où tu veux');
   else applyLook();
 }
 $('#pUnlock').onchange = () => setLocked(!$('#pUnlock').checked);
@@ -841,8 +1117,7 @@ $('#pSave').onclick = async () => {
     fortnite_key: $('#pFn').value.trim(),
     henrik_key: $('#pHenrik').value.trim(),
     apex_key: $('#pApex').value.trim(),
-    ai_key: $('#pAi').value.trim(),
-    ai_model: $('#pModel').value.trim() || 'claude-opus-5-5',
+    discord_secret: $('#pDSecret').value.trim(),
     autostart: $('#pAuto').checked,
     hide_on_blur: $('#pBlur').checked,
     pill_mode: $('#pPill').checked,
@@ -885,6 +1160,7 @@ $('#updBtn').onclick = async () => {
   $$('#focusPresets button').forEach((x) => x.classList.toggle('on', +x.dataset.min === focusMin));
   selectGame(curGame);
   onLive(await invoke('live_state').catch(() => null));
+  onVoice(await invoke('voice_state').catch(() => null));
 
   setVars('pill');
   const st = await invoke('startup_state').catch(() => ({ visible: true, hidden: false }));

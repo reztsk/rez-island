@@ -28,6 +28,8 @@ const DISCORD: &[&str] = &["discord.exe", "discordptb.exe", "discordcanary.exe"]
 #[derive(Default, Clone, PartialEq)]
 pub struct Scan {
     pub discord: bool,
+    /// Noms (minuscules) de tous les processus : launchers, torrents…
+    pub procs: std::collections::HashSet<String>,
     pub game: Option<(&'static str, &'static str)>,
 }
 
@@ -48,9 +50,27 @@ pub fn scan() -> Scan {
                     out.game = Some((g.1, g.2));
                 }
             }
+            out.procs.insert(name);
             ok = Process32NextW(snap, &mut e).is_ok();
         }
         let _ = CloseHandle(snap);
     }
     out
+}
+
+/// PID -> nom d'exe (minuscules), sans ouvrir aucun processus.
+pub fn names_by_pid() -> std::collections::HashMap<u32, String> {
+    let mut m = std::collections::HashMap::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return m };
+        let mut e = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut ok = Process32FirstW(snap, &mut e).is_ok();
+        while ok {
+            let len = e.szExeFile.iter().position(|&c| c == 0).unwrap_or(e.szExeFile.len());
+            m.insert(e.th32ProcessID, String::from_utf16_lossy(&e.szExeFile[..len]).to_lowercase());
+            ok = Process32NextW(snap, &mut e).is_ok();
+        }
+        let _ = CloseHandle(snap);
+    }
+    m
 }
