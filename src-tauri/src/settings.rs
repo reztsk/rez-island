@@ -26,6 +26,8 @@ pub struct Settings {
     pub fortnite_key: String,
     pub henrik_key: String,
     pub apex_key: String,
+    /// Clé gratuite Arenyze (stats R6 publiques par pseudo).
+    pub r6_key: String,
     pub ai_key: String,
     pub openai_key: String,
     pub gemini_key: String,
@@ -62,6 +64,14 @@ pub struct Settings {
     pub auto_update: bool,
     /// Anti-veille (écran et PC restent allumés).
     pub awake: bool,
+    /// Contenu permanent de la pilule : auto | clock | media | perf | weather | battery.
+    pub pill_show: String,
+    /// Forme de la pilule : rect (rectangle arrondi) | round.
+    pub pill_shape: String,
+    /// Fermeture auto de l île ouverte après N s sans interaction (0 = jamais).
+    pub auto_close: u32,
+    /// Comptes IA connectés dans la fenêtre officielle (géré par le backend).
+    pub ai_accounts: Vec<String>,
 }
 
 impl Default for Settings {
@@ -78,6 +88,7 @@ impl Default for Settings {
             fortnite_key: String::new(),
             henrik_key: String::new(),
             apex_key: String::new(),
+            r6_key: String::new(),
             ai_key: String::new(),
             openai_key: String::new(),
             gemini_key: String::new(),
@@ -102,12 +113,16 @@ impl Default for Settings {
             modules_off: vec![],
             auto_update: true,
             awake: false,
+            pill_show: "auto".into(),
+            pill_shape: "rect".into(),
+            auto_close: 5,
+            ai_accounts: vec![],
         }
     }
 }
 
 impl Settings {
-    fn keys_mut(&mut self) -> [&mut String; 8] {
+    fn keys_mut(&mut self) -> [&mut String; 9] {
         [
             &mut self.ai_key,
             &mut self.fortnite_key,
@@ -117,6 +132,7 @@ impl Settings {
             &mut self.gemini_key,
             &mut self.discord_secret,
             &mut self.discord_token,
+            &mut self.r6_key,
         ]
     }
     /// Remet les vraies clés quand le front renvoie le masque.

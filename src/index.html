@@ -16,7 +16,7 @@
     <span class="pf-right">
       <img class="pill-art hidden" id="pillArt" alt="">
       <span class="pill-voice hidden" id="pillVoice"></span>
-      <span id="pillInfo"></span>
+      <span class="pinfo" id="pillInfo"></span>
       <span class="bars hidden" id="pillBars"><i></i><i></i><i></i></span>
     </span>
     <i class="pill-prog hidden" id="pillProg"><i></i></i>
@@ -323,15 +323,16 @@
           <div class="tabs prov" id="aProv">
             <button data-prov="claude">Claude</button><button data-prov="openai">ChatGPT</button><button data-prov="gemini">Gemini</button>
           </div>
-          <button class="icon-btn" id="aCfgBtn" title="Clé API et modèle"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg></button>
+          <button class="icon-btn" id="aCfgBtn" title="Clé API (optionnelle) et modèle"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg></button>
         </div>
+        <div class="ai-acc" id="aAcc"></div>
         <div class="card form ai-cfg hidden" id="aCfg">
           <label><span>Clé API <span id="aKeyName">Anthropic</span></span>
             <span class="row"><input id="aKey" class="grow" type="password" autocomplete="off" placeholder="Colle ta clé ici"><button type="button" class="btn sm" id="aKeyLink">Obtenir une clé ↗</button></span>
           </label>
           <label>Modèle<input id="aModel" autocomplete="off"></label>
           <button class="btn primary" id="aSave">Enregistrer</button>
-          <small class="hint">Optionnel : tout le reste de REZ marche sans clé. Elle est chiffrée sur ton PC (DPAPI) et envoyée uniquement au fournisseur choisi.</small>
+          <small class="hint">Optionnel : sans clé, connecte simplement ton compte (bouton au-dessus). Elle est chiffrée sur ton PC (DPAPI) et envoyée uniquement au fournisseur choisi.</small>
         </div>
         <div class="chat" id="aLog"><div class="msg bot">Salut, je suis REZ. Pose ta question.</div></div>
         <form class="chat-in" id="aForm">
@@ -457,15 +458,39 @@
               <button data-theme="orange" style="--t1:#f97316;--t2:#facc15" title="Orange"></button>
               <button data-theme="mono" style="--t1:#71717a;--t2:#e4e4e7" title="Graphite"></button>
             </div>
-            <span class="lbl">Taille</span>
-            <div class="seg" id="pSize">
-              <button data-size="compact">Compact</button>
-              <button data-size="large">Large</button>
-              <i></i>
+            <span class="lbl">Taille de l'île ouverte</span>
+            <div class="vopts two" id="pSize">
+              <button data-size="compact"><span class="pv pv-mon"><i class="vo" style="--vw:40%;--vh:52%"></i></span><b>Compact</b><small>Prend peu de place</small></button>
+              <button data-size="large"><span class="pv pv-mon"><i class="vo" style="--vw:50%;--vh:66%"></i></span><b>Large</b><small>Texte plus grand</small></button>
             </div>
             <label>Opacité du verre <b id="pOpVal" class="val">72%</b><input type="range" id="pOpacity" min="25" max="100" value="72"></label>
-            <label class="tog"><input type="checkbox" id="pPill"><span></span>Pilule toujours visible</label>
+            <div class="pv pv-op"><i><b>12:45</b><small>Aperçu du verre sur ton fond d'écran</small></i></div>
             <label class="tog"><input type="checkbox" id="pBlur"><span></span>Réduire quand REZ perd le focus</label>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <div class="set-t"><i style="--c:#f472b6"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="6" rx="2.5"/><path d="M7 12h3"/></svg></i>Île fermée</div>
+          <div class="card form">
+            <span class="lbl">Forme</span>
+            <div class="vopts two" id="pShape">
+              <button data-shape="rect"><span class="pv pv-mon"><i class="mp rect"><b>12:45</b></i></span><b>Rectangle</b><small>Compacte, coins doux</small></button>
+              <button data-shape="round"><span class="pv pv-mon"><i class="mp round"><b>12:45</b></i></span><b>Pilule</b><small>Bords bien ronds</small></button>
+            </div>
+            <span class="lbl">Affichage permanent</span>
+            <div class="vopts three" id="pShow">
+              <button data-show="auto"><span class="pv pv-mon"><i class="mp"><b>12:45</b><em class="eq"><u></u><u></u><u></u></em></i></span><b>Auto</b><small>Musique, jeu, sinon l'heure</small></button>
+              <button data-show="clock"><span class="pv pv-mon"><i class="mp"><b>12:45</b></i></span><b>Heure</b><small>Ultra compacte</small></button>
+              <button data-show="media"><span class="pv pv-mon"><i class="mp"><b>12:45</b><em class="art"></em><em>Titre</em></i></span><b>Lecteur</b><small>Le titre en cours</small></button>
+              <button data-show="perf"><span class="pv pv-mon"><i class="mp"><b>12:45</b><em>CPU 12%</em></i></span><b>Perf</b><small>CPU et GPU en direct</small></button>
+              <button data-show="weather"><span class="pv pv-mon"><i class="mp"><b>12:45</b><em>☀ 14°</em></i></span><b>Météo</b><small>Ta ville</small></button>
+              <button data-show="battery"><span class="pv pv-mon"><i class="mp"><b>12:45</b><em>🎧 64%</em></i></span><b>Batteries</b><small>La plus faible</small></button>
+            </div>
+            <small class="hint">Focus, minuteur, vocal Discord et téléchargements passent toujours devant, puis l'île revient à ton choix. Rien de lancé : elle se réduit à l'heure seule.</small>
+            <label class="tog"><input type="checkbox" id="pPill"><span></span>Pilule toujours visible</label>
+            <span class="lbl">Fermeture automatique</span>
+            <div class="pv pv-close"><i class="o"></i><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><i class="c"></i><span id="pCloseTxt">après 5 s sans rien faire</span></div>
+            <div class="chips" id="pClose"><button data-close="0">Jamais</button><button data-close="3">3 s</button><button data-close="5">5 s</button><button data-close="10">10 s</button><button data-close="20">20 s</button></div>
           </div>
         </div>
 
@@ -476,7 +501,8 @@
               <button class="btn primary grow" id="pWEdit">Organiser sur l'accueil</button>
               <button class="btn" id="pWReset">Par défaut</button>
             </div>
-            <small class="hint">Active, désactive ou déplace chaque widget. Sur l'accueil, ✎ puis glisse les tuiles où tu veux.</small>
+            <div class="pv pv-grid" id="pWPrev"></div>
+            <small class="hint">Aperçu de ton accueil. Active, désactive ou déplace chaque widget. Sur l'accueil, ✎ puis glisse les tuiles où tu veux.</small>
             <div class="wlist" id="pWidgets"></div>
           </div>
         </div>
@@ -492,8 +518,11 @@
         <div class="set-group">
           <div class="set-t"><i style="--c:#22d3ee"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v4h8V4"/></svg></i>Position</div>
           <div class="card form">
-            <div class="seg three" id="pDock">
-              <button data-dock="top">Haut</button><button data-dock="left">Gauche</button><button data-dock="right">Droite</button><i></i>
+            <div class="vopts four" id="pDock">
+              <button data-dock="top"><span class="pv pv-mon"><i class="mp sm"></i></span><b>Haut</b></button>
+              <button data-dock="left"><span class="pv pv-mon"><i class="mp sm l" style="left:0;top:45%;transform:translateY(-50%)"></i></span><b>Gauche</b></button>
+              <button data-dock="right"><span class="pv pv-mon"><i class="mp sm r" style="left:auto;right:0;top:45%;transform:translateY(-50%)"></i></span><b>Droite</b></button>
+              <button data-dock="free"><span class="pv pv-mon"><em class="drag"></em><i class="mp sm f" style="left:52%;top:62%"></i></span><b>Libre</b></button>
             </div>
             <label class="tog"><input type="checkbox" id="pUnlock"><span></span>Déverrouiller l'emplacement</label>
             <small class="hint" id="pUnlockHint">Glisse l'île où tu veux, sur n'importe quel écran.</small>
@@ -519,6 +548,17 @@
             <label>Clé fortnite-api.com<input id="pFn" type="password" autocomplete="off"></label>
             <label>Clé HenrikDev (Valorant)<input id="pHenrik" type="password" autocomplete="off"></label>
             <label>Clé apexlegendsapi.com<input id="pApex" type="password" autocomplete="off"></label>
+            <label>Clé Arenyze (Rainbow Six, gratuite)<input id="pR6" type="password" autocomplete="off"></label>
+            <div class="row between"><small class="hint">Gratuite : 2 000 recherches R6 / mois.</small><button type="button" class="btn sm" data-open-uri="https://arenyze.com/profile#developer">Obtenir ↗</button></div>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <div class="set-t"><i style="--c:#38bdf8"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg></i>Comptes IA</div>
+          <div class="card form">
+            <div class="pv pv-acc"><i class="w1"></i><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><i class="w2"><b>✓</b></i><span>Connexion sur le site officiel, dans une fenêtre REZ séparée</span></div>
+            <div id="pAiAcc"></div>
+            <small class="hint">Sans clé API payante : connecte-toi avec ton compte ChatGPT, Claude ou Gemini sur leur page officielle. REZ ne voit jamais ton mot de passe et cette fenêtre n'a accès à rien dans REZ. Déconnexion = cookies effacés du profil REZ.</small>
           </div>
         </div>
 

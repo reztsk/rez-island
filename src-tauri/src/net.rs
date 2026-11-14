@@ -1,5 +1,5 @@
 //! APIs publiques : météo (Open-Meteo), pochettes (iTunes), stats par pseudo (fortnite-api.com,
-//! HenrikDev Valorant, apexlegendsapi.com), chat IA (Claude, ChatGPT, Gemini), OAuth Discord. Aucun accès aux jeux.
+//! HenrikDev Valorant, apexlegendsapi.com, Arenyze R6), chat IA (Claude, ChatGPT, Gemini), OAuth Discord. Aucun accès aux jeux.
 use crate::err;
 use serde_json::{json, Value};
 use std::sync::OnceLock;
@@ -294,6 +294,156 @@ pub async fn apex(key: &str, name: &str, platform: &str) -> Result<Value, String
         "legend_img": sel["ImgAssets"]["icon"],
         "legend_stats": sel["data"],
     }))
+}
+
+// ---------- Rainbow Six Siege : Arenyze (données publiques Ubisoft par pseudo, clé gratuite) ----------
+const R6_TIERS: [&str; 7] = ["Cuivre", "Bronze", "Argent", "Or", "Platine", "Émeraude", "Diamant"];
+const R6_DIV: [&str; 5] = ["V", "IV", "III", "II", "I"];
+
+/// Rang classé (0 = non classé, 1..35 = Cuivre V..Diamant I, 36 = Champion).
+fn r6_rank_name(idx: i64) -> String {
+    match idx {
+        i if i <= 0 => "Non classé".into(),
+        i if i >= 36 => "Champion".into(),
+        i => format!("{} {}", R6_TIERS[((i - 1) / 5) as usize], R6_DIV[((i - 1) % 5) as usize]),
+    }
+}
+fn r6_rank_from_rp(rp: i64) -> i64 {
+    if rp < 1000 { 0 } else if rp >= 4500 { 36 } else { (rp - 1000) / 100 + 1 }
+}
+fn n(v: &Value) -> i64 {
+    v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)).or_else(|| v.as_str().and_then(|s| s.parse().ok())).unwrap_or(0)
+}
+fn kdwr(k: i64, d: i64, w: i64, l: i64) -> Value {
+    json!({
+        "k": k, "d": d, "w": w, "l": l,
+        "kd": if d > 0 { (k as f64 / d as f64 * 100.0).round() / 100.0 } else { k as f64 },
+        "wr": if w + l > 0 { (w as f64 * 1000.0 / (w + l) as f64).round() / 10.0 } else { 0.0 },
+        "matches": w + l,
+    })
+}
+
+async fn r6_profile(key: &str, name: &str, platform: &str) -> Result<Value, String> {
+    if key.is_empty() {
+        return Err("Clé Arenyze manquante : Réglages → Services (gratuite sur arenyze.com)".into());
+    }
+    let platform = match platform { "psn" => "psn", "xbl" => "xbl", _ => "uplay" };
+    let (ok, v) = get_json(
+        client()
+            .get("https://public-api.arenyze.com/r6/api/v2/profile")
+            .header("api-key", key)
+            .query(&[("nameOnPlatform", name.trim()), ("platformType", platform)]),
+    )
+    .await?;
+    if !ok || v.get("error").is_some() {
+        let e = v["error"].as_str().or(v["message"].as_str()).unwrap_or("Joueur introuvable");
+        return Err(match e {
+            e if e.contains("api-key") || e.contains("API key") || e.contains("Invalid") => format!("Clé Arenyze refusée ({e})"),
+            e => e.to_string(),
+        });
+    }
+    Ok(v)
+}
+
+/// Réduit la réponse Arenyze aux infos utiles : rang classé de la saison, K/D, victoires…
+fn r6_slim(v: &Value, fallback_name: &str) -> Value {
+    let mut ranked: Option<&Value> = None;
+    let mut season_id = 0i64;
+    let (mut k, mut d, mut w, mut l) = (0, 0, 0, 0);
+    let mut boards = vec![];
+    for fam in v["stats"]["platform_families_full_profiles"].as_array().into_iter().flatten() {
+        for b in fam["board_ids_full_profiles"].as_array().into_iter().flatten() {
+            let id = b["board_id"].as_str().unwrap_or("").to_string();
+            // saison en cours = season_id le plus élevé
+            let Some(fp) = b["full_profiles"].as_array().and_then(|a| a.iter().max_by_key(|p| n(&p["season_id"]))) else { continue };
+            let p = &fp["profile"];
+            let ss = &fp["season_statistics"];
+            let bk = n(&p["kills"]).max(n(&ss["kills"]));
+            let bd = n(&p["deaths"]).max(n(&ss["deaths"]));
+            let bw = n(&p["wins"]).max(n(&ss["match_outcomes"]["wins"]));
+            let bl = n(&p["losses"]).max(n(&ss["match_outcomes"]["losses"]));
+            season_id = season_id.max(n(&fp["season_id"]));
+            if bk + bd + bw + bl > 0 {
+                boards.push(json!({ "id": id, "s": kdwr(bk, bd, bw, bl) }));
+            }
+            k += bk; d += bd; w += bw; l += bl;
+            if id.contains("ranked") && ranked.map_or(true, |r: &Value| n(&r["season_id"]) < n(&fp["season_id"])) {
+                ranked = Some(fp);
+            }
+        }
+    }
+    let acc = &v["account"];
+    let name = v["player"]["nameOnPlatform"].as_str().filter(|s| !s.is_empty()).unwrap_or(fallback_name);
+    let mut out = json!({
+        "name": name,
+        "platform": v["player"]["platformType"],
+        "level": acc["level"].as_i64().or(acc["profile"]["level"].as_i64()),
+        "avatar": acc["profilePicture"],
+        "banned": v["banned"]["isBanned"].as_bool().unwrap_or(false),
+        "season_id": season_id,
+        "season": kdwr(k, d, w, l),
+        "boards": boards,
+        "ranked": Value::Null,
+        "rank": "Non classé", "rank_idx": 0, "rp": Value::Null,
+    });
+    if let Some(fp) = ranked {
+        let p = &fp["profile"];
+        let rp = n(&p["rank_points"]);
+        let idx = match n(&p["rank"]) { 0 if rp >= 1000 => r6_rank_from_rp(rp), i => i };
+        let max_rp = n(&p["max_rank_points"]);
+        let max_idx = match n(&p["max_rank"]) { 0 if max_rp >= 1000 => r6_rank_from_rp(max_rp), i => i };
+        let ss = &fp["season_statistics"];
+        out["ranked"] = kdwr(
+            n(&p["kills"]).max(n(&ss["kills"])),
+            n(&p["deaths"]).max(n(&ss["deaths"])),
+            n(&p["wins"]).max(n(&ss["match_outcomes"]["wins"])),
+            n(&p["losses"]).max(n(&ss["match_outcomes"]["losses"])),
+        );
+        out["rank"] = json!(r6_rank_name(idx));
+        out["rank_idx"] = json!(idx);
+        out["rp"] = json!(rp);
+        out["max_rank"] = json!(r6_rank_name(max_idx));
+        out["max_rp"] = json!(max_rp);
+        out["abandons"] = json!(n(&p["abandon"]).max(n(&ss["match_outcomes"]["abandons"])));
+    }
+    out
+}
+
+/// Rainbow Six Siege : rang classé, RP, K/D, victoires de la saison (pseudo public, aucun accès au jeu).
+pub async fn r6(key: &str, name: &str, platform: &str) -> Result<Value, String> {
+    let v = r6_profile(key, name, platform).await?;
+    Ok(r6_slim(&v, name))
+}
+
+/// Feuille de match : stats publiques de plusieurs joueurs (coéquipiers / adversaires saisis à la main).
+pub async fn r6_lobby(key: &str, names: Vec<String>, platform: &str) -> Result<Vec<Value>, String> {
+    if key.is_empty() {
+        return Err("Clé Arenyze manquante : Réglages → Services (gratuite sur arenyze.com)".into());
+    }
+    let tasks: Vec<_> = names
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .take(10)
+        .map(|name| {
+            let (key, platform) = (key.to_string(), platform.to_string());
+            tauri::async_runtime::spawn(async move {
+                match r6_profile(&key, &name, &platform).await {
+                    Ok(v) => {
+                        let mut s = r6_slim(&v, &name);
+                        s["ok"] = json!(true);
+                        s
+                    }
+                    Err(e) => json!({ "name": name, "ok": false, "err": e }),
+                }
+            })
+        })
+        .collect();
+    let mut out = vec![];
+    for t in tasks {
+        out.push(t.await.map_err(err)?);
+    }
+    Ok(out)
 }
 
 const SYSTEM: &str = "Tu es REZ, l'assistant intégré à une Dynamic Island Windows. \

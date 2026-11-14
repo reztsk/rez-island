@@ -35,6 +35,7 @@ REZ/
    ├─ icons/               icon.ico + PNG (générés)
    └─ src/
       ├─ main.rs           fenêtre, tray, raccourci, commandes
+      ├─ aiweb.rs          comptes IA : fenêtre officielle isolée, statut par cookie de session
       ├─ clip.rs           historique du presse-papiers (mémoire seule)
       ├─ settings.rs       paramètres JSON (%APPDATA%\com.rez.island)
       ├─ secure.rs         chiffrement DPAPI des clés API
@@ -101,7 +102,9 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 ## Utilisation
 | Action | Comment |
 |---|---|
-| Île | Pilule collée en haut au centre (heure, musique en cours / météo). Clic → l'île s'ouvre |
+| Île | Petit rectangle compact en haut au centre : sa largeur suit son contenu. Rien de lancé → l'heure seule. Clic → l'île s'ouvre |
+| Île fermée | Réglages → Île fermée : forme (Rectangle / Pilule) et affichage permanent au choix (Auto, Heure, Lecteur, Perf CPU/GPU, Météo, Batteries), avec aperçu visuel de chaque option |
+| Fermeture auto | L'île ouverte se referme seule après 5 s sans souris ni clavier (Réglages → Jamais / 3 / 5 / 10 / 20 s). Jamais pendant une saisie ou l'organisation des widgets |
 | Ouvrir / réduire | `Ctrl+B` (modifiable), clic sur la pilule ou l'icône tray, `Échap` pour réduire |
 | Masquer / afficher l'île | `Ctrl+N` (modifiable, Retour arrière pour le désactiver). REZ reste dans le tray |
 | Position | Réglages (⚙ en haut) → Haut / Gauche / Droite. Les panneaux s'ouvrent toujours vers l'intérieur de l'écran |
@@ -126,15 +129,16 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 | Mode Focus | Widget Focus : − / + pour la durée, ▶ pour lancer. Les notifications Discord sont masquées jusqu'à la fin |
 | Discord | Assistant intégré (vue Discord) : colle l'Application ID, REZ le vérifie auprès de Discord et l'enregistre. Connexion auto, réessais discrets si Discord n'est pas prêt. Photo de profil, présence auto selon le jeu, présence perso |
 | Vocal Discord | Client ID + Client Secret de ton app (redirection `http://localhost`), puis « Activer le vocal » : membres du salon, qui parle (cercle vert), micro / casque / quitter |
-| Trackers | Stats → choisir le jeu → lier son ID. Valorant : rang + dernière partie avec alliés et adversaires. Apex : statut en direct |
+| Trackers | Stats → choisir le jeu → lier son ID. Valorant : rang + dernière partie avec alliés et adversaires. Apex : statut en direct. Rainbow Six : rang classé, RP, K/D, victoires par mode + feuille de match (stats des coéquipiers / adversaires tapés à la main) |
 | Taille | Réglages → Compact / Large (transition animée) |
 | Pilule permanente | Réglages → « Pilule toujours visible » (désactivé = REZ disparaît complètement une fois réduit) |
 | Quitter | clic droit tray → Quitter, ou Réglages → Quitter |
 | Épingler un dossier | glisser-déposer sur REZ, ou formulaire Accès rapide |
-| Chat IA | Optionnel. Vue IA → Claude / ChatGPT / Gemini → « Obtenir une clé » ouvre la page officielle. Modèles par défaut : `claude-opus-5-5`, `gpt-5-mini`, `gemini-2.5-flash` |
+| Chat IA | Sans clé : « Se connecter avec ChatGPT / Claude / Gemini » ouvre la page officielle dans une fenêtre REZ isolée (statut Connecté / Déconnecté dans Réglages → Comptes IA, mot de passe jamais vu par REZ). La question tapée dans l'île y est envoyée. Avec une clé API (optionnelle) : réponses directement dans l'île |
 | Stats Fortnite | clé gratuite sur fortnite-api.com → Réglages |
 | Stats Valorant | clé gratuite HenrikDev (api.henrikdev.xyz, via leur Discord) → Réglages |
 | Stats Apex | clé gratuite sur apexlegendsapi.com → Réglages |
+| Stats Rainbow Six | clé gratuite Arenyze (arenyze.com → Profil → Developer, 2 000 recherches / mois) → Réglages |
 | Discord | assistant dans la vue Discord : créer l'app REZ sur discord.com/developers, coller l'Application ID |
 | Démarrage auto | Réglages → Lancer avec Windows (démarre masqué dans le tray) |
 

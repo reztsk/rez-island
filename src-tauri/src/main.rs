@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod aiweb;
 mod audio;
 mod clip;
 mod devices;
@@ -412,6 +413,14 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut s: Settings) -> Res
     s.focus_until = old.focus_until;
     s.focus_prev = old.focus_prev.clone();
     s.awake = old.awake;
+    s.ai_accounts = old.ai_accounts.clone();
+    if !matches!(s.pill_show.as_str(), "auto" | "clock" | "media" | "perf" | "weather" | "battery") {
+        s.pill_show = "auto".into();
+    }
+    if !matches!(s.pill_shape.as_str(), "rect" | "round") {
+        s.pill_shape = "rect".into();
+    }
+    s.auto_close = s.auto_close.min(120);
     s.discord_token = old.discord_token.clone();
     if s.discord_client_id.trim() != old.discord_client_id.trim() || s.discord_secret != old.discord_secret {
         s.discord_token.clear(); // autre app Discord -> nouvelle autorisation vocale
@@ -817,6 +826,29 @@ async fn apex_stats(app: AppHandle, name: String, platform: String) -> Result<Va
 }
 
 #[tauri::command]
+async fn r6_stats(app: AppHandle, name: String, platform: String) -> Result<Value, String> {
+    let k = key(&app, |s| s.r6_key.clone());
+    net::r6(&k, &name, &platform).await
+}
+
+#[tauri::command]
+async fn r6_lobby(app: AppHandle, names: Vec<String>, platform: String) -> Result<Vec<Value>, String> {
+    let k = key(&app, |s| s.r6_key.clone());
+    net::r6_lobby(&k, names, &platform).await
+}
+
+// comptes IA : fenêtre officielle isolée (async : création de fenêtre sans bloquer le thread principal)
+#[tauri::command]
+async fn ai_web_open(app: AppHandle, provider: String, prompt: Option<String>) -> Result<bool, String> {
+    aiweb::open(&app, &provider, prompt)
+}
+
+#[tauri::command]
+async fn ai_web_logout(app: AppHandle, provider: String) -> Result<(), String> {
+    aiweb::logout(&app, &provider)
+}
+
+#[tauri::command]
 async fn ai_chat(app: AppHandle, messages: Vec<Value>) -> Result<String, String> {
     let (provider, k, model) = {
         let st = app.state::<AppState>();
@@ -987,7 +1019,7 @@ fn main() {
             std::thread::spawn(move || clip::run(h));
             Ok(())
         })
-        .on_window_event(|w, ev| match ev {
+        .on_window_event(|w, ev| if w.label() == "main" { match ev {
             WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 hide(w.app_handle());
@@ -1028,6 +1060,7 @@ fn main() {
                 });
             }
             _ => {}
+        }
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -1072,7 +1105,11 @@ fn main() {
             apex_stats,
             ai_chat,
             check_update,
-            install_update
+            install_update,
+            r6_stats,
+            r6_lobby,
+            ai_web_open,
+            ai_web_logout
         ])
         .build(tauri::generate_context!())
         .expect("REZ: erreur au lancement");

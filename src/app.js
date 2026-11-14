@@ -11,9 +11,14 @@ const store = {
 
 // Tailles de l'île (px logiques) : pilule / ouverte
 const SIZES = {
-  compact: { pill: [210, 34], open: [372, 452] },
-  large:   { pill: [244, 40], open: [432, 520] },
+  compact: { pill: [176, 30], open: [372, 452] },
+  large:   { pill: [200, 34], open: [432, 520] },
 };
+// île fermée : hauteur fixe, largeur ajustée au contenu (heure seule = ultra compacte)
+const PILL_H = { compact: 30, large: 34 };
+const PILL_MIN = { compact: 84, large: 96 };
+const PILL_MAX = { compact: 232, large: 264 };
+let pillWidth = 0, pillMini = true, pillHold = false, pillSys = null;
 const ANIM = 440;
 
 let S = {};                 // paramètres (clés masquées)
@@ -68,19 +73,26 @@ function applyAlign(a) {
 }
 listen('rez://align', (e) => applyAlign(e.payload));
 function setVars(m) {
-  const [w, h] = SIZES[sizeKey()][m];
+  const [w, h] = dims(m);
   isl.style.setProperty('--w', w + 'px');
   isl.style.setProperty('--h', h + 'px');
+  isl.style.setProperty('--pr', S.pill_shape === 'round' ? h / 2 + 'px' : (sizeKey() === 'large' ? '11px' : '10px'));
 }
 async function render(m, focus = false) {
   const id = ++animId;
   mode = m;
-  const [w, h] = SIZES[sizeKey()][m];
+  if (m === 'pill') { pillHold = true; try { renderPill(); } finally { pillHold = false; } }
+  const [w, h] = dims(m);
   await fit(Math.max(w, winW), Math.max(h, winH), focus);
   isl.classList.toggle('open', m === 'open');
   setVars(m);
-  setTimeout(() => { if (id === animId && (winW !== w || winH !== h)) fit(w, h); }, ANIM + 20);
-  if (m === 'open') onView();
+  setTimeout(() => {
+    if (id !== animId) return;
+    const [fw, fh] = dims(m);
+    setVars(m);
+    if (winW !== fw || winH !== fh) fit(fw, fh);
+  }, ANIM + 20);
+  if (m === 'open') { onView(); armIdle(); } else { clearTimeout(idleT); idleT = null; }
   schedule();
   return id;
 }
@@ -102,7 +114,7 @@ listen('rez://toggle', () => {
 });
 // Ctrl+N : l'île disparaît -> revient en pilule
 listen('rez://collapse-now', () => {
-  if (mode === 'open') { animId++; mode = 'pill'; isl.classList.remove('open'); setVars('pill'); fit(...SIZES[sizeKey()].pill); }
+  if (mode === 'open') { animId++; mode = 'pill'; isl.classList.remove('open'); setVars('pill'); fit(...dims('pill')); }
 });
 listen('rez://blur', () => { if (S.hide_on_blur && mode === 'open') collapse(); });
 listen('rez://visible', (e) => { winVisible = !!e.payload; schedule(); });
@@ -182,11 +194,12 @@ function schedule() {
   refreshMedia();
   mediaTimer = setInterval(refreshMedia, fast ? 2000 : 5000);
   if (mode === 'open' && view === 'home' && wOn('sys')) { refreshSys(); sysTimer = setInterval(refreshSys, 2000); }
+  else if (mode === 'pill' && S.pill_show === 'perf') { refreshSys(); sysTimer = setInterval(refreshSys, 3000); }
   if (mode === 'open' && view === 'media' && msub === 'mix') { refreshMix(); mixTimer = setInterval(refreshMix, 900); }
   if (mode === 'open' && view === 'perf') { refreshPerf(); perfTimer = setInterval(refreshPerf, 1000); }
   // batteries : la liste est en cache côté Rust (20 s), la détection reste très légère
   const devView = mode === 'open' && view === 'devices';
-  if (devView || !devOff()) {
+  if (devView || !devOff() || S.pill_show === 'battery') {
     refreshDevices(devView);
     devTimer = setInterval(() => refreshDevices(false), devView ? 15e3 : 60e3);
   }
@@ -329,14 +342,25 @@ function renderMediaMeta() {
   const browser = a && BROWSERS.includes(a.key);
   $('#mApp').textContent = a ? (browser && thumbVideo ? `${a.name} · vidéo` : a.name) : '';
 }
-// priorité : Focus > vocal Discord > téléchargement > musique > jeu > météo
+// priorité : Focus > minuteur > vocal Discord > téléchargement > choix de l'utilisateur (auto : musique > jeu > heure seule)
 function renderPill() {
   const left = focusLeft();
   const playing = media?.playing && media?.has_session;
   const ch = voice?.channel;
   const dl = topDownload();
   const dlPct = dl && dl.pct != null && dl.state !== 'En pause';
-  const what = left > 0 ? 'focus' : tm.end ? 'timer' : ch ? 'voice' : dlPct ? 'dl' : playing ? 'media' : live.game ? 'game' : dl ? 'dl' : 'wx';
+  const show = S.pill_show || 'auto';
+  let what = left > 0 ? 'focus' : tm.end ? 'timer' : ch ? 'voice' : dlPct ? 'dl' : null;
+  if (!what) {
+    if (show === 'auto') what = playing ? 'media' : live.game ? 'game' : dl ? 'dl' : 'idle';
+    else if (show === 'media') what = playing ? 'media' : 'idle';
+    else if (show === 'perf') what = pillSys ? 'perf' : 'idle';
+    else if (show === 'weather') what = weatherTxt ? 'wx' : 'idle';
+    else if (show === 'battery') what = lowBat() ? 'bat' : 'idle';
+    else what = 'idle';
+  }
+  pillMini = what === 'idle';
+  isl.classList.toggle('mini', pillMini);
   const info = $('#pillInfo');
   const dot = $('#pillDot');
   dot.classList.toggle('focus', what === 'focus' || what === 'timer');
@@ -366,7 +390,11 @@ function renderPill() {
   } else if (what === 'dl') info.textContent = dlPct ? `↓ ${Math.floor(dl.pct)}%${dl.eta != null ? ' · ' + dur(dl.eta) : ''}` : `↓ ${rate(dl.speed)}`;
   else if (what === 'media') info.textContent = media.title || appInfo(media.app)?.name || '';
   else if (what === 'game') info.textContent = `🎮 ${live.game.name}`;
-  else info.textContent = weatherTxt;
+  else if (what === 'perf') info.textContent = `CPU ${Math.round(pillSys.cpu ?? 0)}%${pillSys.gpu != null ? ' · GPU ' + Math.round(pillSys.gpu) + '%' : ''}`;
+  else if (what === 'bat') { const b = lowBat(); info.textContent = `${BAT_EMO[b.kind] || BAT_EMO.other} ${b.pct}%`; }
+  else if (what === 'wx') info.textContent = weatherTxt;
+  else info.textContent = '';
+  syncPillSize();
 }
 function curPos() {
   if (!media?.duration) return 0;
@@ -459,6 +487,8 @@ function gauge(id, pct, sub, temp) {
 async function refreshSys() {
   try {
     const s = await invoke('sys_info');
+    pillSys = { cpu: s.cpu, gpu: s.gpu };
+    if (mode === 'pill') renderPill();
     gauge('#gCpu', s.cpu, '', s.cpu_temp);
     gauge('#gGpu', s.gpu, '', s.gpu_temp);
     gauge('#gRam', s.ram, `${num(s.used, 1)}/${num(s.total, 0)} Go`);
@@ -797,8 +827,9 @@ const GAMES = {
   apex: { name: 'Apex Legends', ph: 'Pseudo EA / Steam', opts: [['PC', 'PC'], ['PS4', 'PS'], ['X1', 'Xbox'], ['SWITCH', 'Switch']],
     load: (id, o) => invoke('apex_stats', { name: id, platform: o }), render: rApex,
     link: (id) => `https://apex.tracker.gg/apex/profile/origin/${enc(id)}/overview` },
-  r6: { name: 'Rainbow Six Siege', ph: 'Pseudo Ubisoft', opts: [['ubi', 'PC'], ['psn', 'PSN'], ['xbl', 'Xbox']],
-    link: (id, o) => `https://r6.tracker.network/r6siege/profile/${o}/${enc(id)}/overview` },
+  r6: { name: 'Rainbow Six Siege', ph: 'Pseudo Ubisoft', opts: [['uplay', 'PC (Ubisoft)'], ['psn', 'PSN'], ['xbl', 'Xbox']],
+    load: (id, o) => invoke('r6_stats', { name: id, platform: o }), render: rR6,
+    link: (id, o) => `https://r6.tracker.network/r6siege/profile/${o === 'psn' || o === 'xbl' ? o : 'ubi'}/${enc(id)}/overview` },
   rl: { name: 'Rocket League', ph: 'Pseudo', opts: [['epic', 'Epic'], ['steam', 'Steam'], ['psn', 'PSN'], ['xbl', 'Xbox']],
     link: (id, o) => `https://rocketleague.tracker.network/rocket-league/profile/${o}/${enc(id)}/overview` },
 };
@@ -814,7 +845,8 @@ function selectGame(g) {
   $('#sId').placeholder = G.ph;
   $('#sId').value = P[g] || '';
   $('#sOpt').innerHTML = G.opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
-  $('#sOpt').value = P[g + '_opt'] || G.opts[0][0];
+  const ov = P[g + '_opt'];
+  $('#sOpt').value = G.opts.some(([v]) => v === ov) ? ov : G.opts[0][0];
   $('#sLink').textContent = P[g] ? 'Mettre à jour' : 'Lier ce joueur';
   renderLiveBanner();
   if (view === 'stats' && mode === 'open') loadStats(false);
@@ -840,7 +872,7 @@ $('#sForm').onsubmit = async (e) => {
 $('#sRefresh').onclick = () => { delete statCache[curGame]; loadStats(true); };
 async function loadStats(force) {
   const g = curGame, G = GAMES[g], P = S.players || {};
-  const id = P[g], opt = P[g + '_opt'] || G.opts[0][0];
+  const id = P[g], ov = P[g + '_opt'], opt = G.opts.some(([v]) => v === ov) ? ov : G.opts[0][0];
   const out = $('#sOut');
   if (!id) { out.innerHTML = `<p class="hint">Lie ton ID joueur ${esc(G.name)} : stats publiques uniquement, zéro accès au jeu (100 % safe anti-cheat).</p>`; return; }
   const linkBtn = `<button class="btn sm" data-uri="${esc(G.link(id, opt))}">Profil tracker</button>`;
@@ -921,15 +953,13 @@ function renderAi() {
   const m = S.ai_model || '';
   $('#aModel').value = m.toLowerCase().startsWith(P.prefix) || (aiProv === 'openai' && /^(o\d|chatgpt)/.test(m)) ? m : P.model;
   $('#aModel').placeholder = P.model;
-  $('#aCfgBtn').classList.toggle('need', !hasKey(aiProv));
-  $('#aIn').placeholder = hasKey(aiProv) ? `Demande à ${P.name}…` : `Ajoute une clé ${P.vendor} pour discuter`;
+  renderAiAcc();
 }
 $('#aProv').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-prov]');
   if (!b || b.dataset.prov === aiProv) return;
   const P = PROVIDERS[b.dataset.prov];
   await persist({ ai_provider: b.dataset.prov, ai_model: P.model });
-  if (!hasKey(b.dataset.prov)) $('#aCfg').classList.remove('hidden');
 });
 $('#aCfgBtn').onclick = () => $('#aCfg').classList.toggle('hidden');
 $('#aKeyLink').onclick = () => call('open_uri', { uri: PROVIDERS[aiProv].url }).catch(() => {});
@@ -956,7 +986,7 @@ $('#aForm').onsubmit = async (e) => {
   e.preventDefault();
   const text = aIn.value.trim();
   if (!text) return;
-  if (!hasKey(aiProv)) { $('#aCfg').classList.remove('hidden'); return toast(`Ajoute d'abord une clé ${PROVIDERS[aiProv].vendor}`, true); }
+  if (!hasKey(aiProv)) return askAccount(text);
   aIn.value = ''; aIn.style.height = 'auto';
   chat.push({ role: 'user', content: text });
   addMsg('user', text);
@@ -1290,6 +1320,7 @@ async function refreshDevices(force) {
   catch {} finally { devBusy = false; $('#devRefresh').classList.remove('spin'); }
 }
 function renderDevices() {
+  if (S.pill_show === 'battery') renderPill();
   $('#devList').innerHTML = devices.length ? devices.map((d) => {
     const c = batCls(d);
     const p = d.pct ?? 0;
@@ -1390,6 +1421,7 @@ function applyLook() {
   $('#btnLock').title = free ? 'Verrouiller l\'île à cet endroit' : 'Déverrouiller pour déplacer l\'île';
   $('#btnLock svg').innerHTML = free ? LOCK_OPEN : LOCK_SHUT;
   $('#pUnlock').checked = free;
+  applyLook171();
   renderDock();
 }
 const DOCKS = { top: 'en haut', left: 'sur le côté gauche', right: 'sur le côté droit' };
@@ -1408,7 +1440,9 @@ function renderDock() {
 }
 $('#pDock').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-dock]');
-  if (!b || b.dataset.dock === S.dock) return;
+  if (!b) return;
+  if (b.dataset.dock === 'free') { if (S.locked !== false) setLocked(false); else toast('Glisse l\'île où tu veux, puis 🔒 pour la figer'); return; }
+  if (b.dataset.dock === S.dock) return;
   if (await persist({ dock: b.dataset.dock })) toast(`Île ${DOCKS[b.dataset.dock]}`);
 });
 function fillSettings() {
@@ -1420,6 +1454,7 @@ function fillSettings() {
   $('#pFn').value = S.fortnite_key;
   $('#pHenrik').value = S.henrik_key;
   $('#pApex').value = S.apex_key;
+  $('#pR6').value = S.r6_key || '';
   $('#pDSecret').value = S.discord_secret;
   $('#pAuto').checked = S.autostart;
   $('#pBlur').checked = S.hide_on_blur;
@@ -1494,6 +1529,7 @@ $('#pSave').onclick = async () => {
     fortnite_key: $('#pFn').value.trim(),
     henrik_key: $('#pHenrik').value.trim(),
     apex_key: $('#pApex').value.trim(),
+    r6_key: $('#pR6').value.trim(),
     discord_secret: $('#pDSecret').value.trim(),
     autostart: $('#pAuto').checked,
     hide_on_blur: $('#pBlur').checked,
@@ -1566,6 +1602,7 @@ function applyWidgets() {
       <button class="icon-btn" data-mv="1" title="Descendre"${act ? '' : ' disabled'}><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
       <label class="tog"><input type="checkbox" data-wtog="${id}"${act ? ' checked' : ''}><span></span></label></div>`;
   }).join('');
+  renderWPrev();
   schedule();
 }
 async function saveWidgets(list) {
@@ -1809,6 +1846,213 @@ function maybeAutoInstall() {
 $('#pAutoUpd').onchange = () => persist({ auto_update: $('#pAutoUpd').checked }).then(maybeAutoInstall);
 setInterval(() => checkUpdate(), 6 * 3600e3);
 
+// ---------- v1.7 : pilule compacte (largeur au contenu), fermeture auto ----------
+function dims(m) {
+  const k = sizeKey();
+  if (m === 'open') return SIZES[k].open;
+  return [pillWidth || SIZES[k].pill[0], PILL_H[k]];
+}
+const pillMeas = document.createElement('div');
+pillMeas.className = 'pill-face pill-measure';
+pillMeas.setAttribute('aria-hidden', 'true');
+document.body.appendChild(pillMeas);
+let pillFitT = null;
+function syncPillSize() {
+  const k = sizeKey();
+  pillMeas.classList.toggle('mini', pillMini);
+  pillMeas.style.setProperty('--h', PILL_H[k] + 'px');
+  pillMeas.innerHTML = $('#pillFace').innerHTML.replace(/\sid="[^"]*"/g, '');
+  const nat = Math.ceil(pillMeas.getBoundingClientRect().width) + 2;
+  const w = Math.min(PILL_MAX[k], Math.max(PILL_MIN[k], Math.ceil(nat / 4) * 4));
+  if (w === pillWidth) return;
+  pillWidth = w;
+  if (pillHold || mode !== 'pill') return;
+  const h = PILL_H[k];
+  if (w > winW || h > winH) fit(Math.max(w, winW), Math.max(h, winH)).then(() => { if (mode === 'pill') setVars('pill'); });
+  else setVars('pill');
+  clearTimeout(pillFitT);
+  pillFitT = setTimeout(() => { if (mode === 'pill' && (winW !== pillWidth || winH !== h)) fit(pillWidth, h); }, ANIM + 20);
+}
+const BAT_EMO = { mouse: '🖱', keyboard: '⌨', headset: '🎧', gamepad: '🎮', other: '🔋' };
+function lowBat() {
+  return devices.filter((d) => d.pct != null).sort((a, b) => a.pct - b.pct)[0] || null;
+}
+
+// fermeture automatique : N s sans souris / clavier dans l'île ouverte
+let idleT = null;
+function armIdle() {
+  clearTimeout(idleT); idleT = null;
+  const s = +(S.auto_close ?? 5);
+  if (!s || mode !== 'open') return;
+  idleT = setTimeout(idleFire, s * 1000);
+}
+function idleFire() {
+  idleT = null;
+  if (mode !== 'open') return;
+  const a = document.activeElement;
+  const typing = a && a.matches('textarea, input:not([type=range]):not([type=checkbox])') && a.value && !a.readOnly;
+  if (editing || wd || seekDrag || volDrag || typing) return armIdle();
+  collapse();
+}
+for (const ev of ['pointermove', 'pointerdown', 'keydown', 'wheel', 'input']) {
+  document.addEventListener(ev, () => { if (mode === 'open') armIdle(); }, { passive: true, capture: true });
+}
+
+// réglages visuels
+$('#pShape').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-shape]');
+  if (!b || b.dataset.shape === (S.pill_shape || 'rect')) return;
+  S.pill_shape = b.dataset.shape; applyLook();
+  await persist();
+});
+$('#pShow').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-show]');
+  if (!b || b.dataset.show === (S.pill_show || 'auto')) return;
+  S.pill_show = b.dataset.show; applyLook();
+  if (await persist()) { renderPill(); schedule(); toast(`Île fermée : ${b.querySelector('b').textContent}`); }
+});
+$('#pClose').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-close]');
+  if (!b) return;
+  S.auto_close = +b.dataset.close; applyLook();
+  if (await persist()) armIdle();
+});
+function applyLook171() {
+  const shape = S.pill_shape === 'round' ? 'round' : 'rect';
+  $$('#pShape button').forEach((b) => b.classList.toggle('on', b.dataset.shape === shape));
+  const show = S.pill_show || 'auto';
+  $$('#pShow button').forEach((b) => b.classList.toggle('on', b.dataset.show === show));
+  const ac = +(S.auto_close ?? 5);
+  $$('#pClose button').forEach((b) => b.classList.toggle('on', +b.dataset.close === ac));
+  $('#pCloseTxt').textContent = ac ? `se ferme après ${ac} s sans rien faire` : 'reste ouverte jusqu\'à ce que tu la fermes';
+  $('.pv-close').classList.toggle('off', !ac);
+  setVars(mode);
+}
+// aperçu de la grille d'accueil (mêmes tailles que les vraies tuiles)
+function renderWPrev() {
+  const on = wOrder();
+  $('#pWPrev').innerHTML = on.map((id) => {
+    const sz = [...wEl(id).classList].find((c) => W_SIZE[c]) || 's11';
+    return `<i class="${sz}" title="${esc(WIDGETS[id])}"><span>${esc(WIDGETS[id])}</span></i>`;
+  }).join('') || '<small class="hint">Aucun widget</small>';
+}
+
+// ---------- Rainbow Six Siege ----------
+const R6_COL = ['#94a3b8', '#c2410c', '#cd7f32', '#cbd5e1', '#facc15', '#22d3ee', '#10b981', '#a78bfa', '#f43f5e'];
+const r6Col = (i) => (!i || i <= 0 ? R6_COL[0] : i >= 36 ? R6_COL[8] : R6_COL[1 + Math.floor((i - 1) / 5)]);
+const R6_BOARD = { ranked: 'Classé', standard: 'Standard', casual: 'Rapide', event: 'Événement', warmup: 'Échauffement', newcomer: 'Débutant' };
+const r6Board = (id) => { const k = Object.keys(R6_BOARD).find((x) => id.includes(x)); return k ? R6_BOARD[k] : id; };
+let r6Lobby = store.get('rez.r6lobby', { allies: '', enemies: '' });
+let r6LobbyRes = null;
+function rR6(r, link) {
+  const R = r.ranked;
+  const s = R || r.season || {};
+  const col = r6Col(r.rank_idx);
+  const modes = (r.boards || []).map((b) => `<span>${esc(r6Board(b.id))}</span><b>${num(b.s.kd, 2)} K/D</b><b>${num(b.s.wr, 1)} %</b><b>${num(b.s.matches)} P</b>`).join('');
+  return `<div class="card">
+    <div class="stat-head"><span><b>${esc(r.name)}</b> <span>· niv. ${num(r.level)}</span></span>${safeUrl(r.avatar) ? `<img src="${esc(r.avatar)}" alt="">` : ''}</div>
+    ${r.banned ? '<div class="card err" style="margin:.4rem 0">Compte signalé banni par Ubisoft</div>' : ''}
+    <div class="r6-rank" style="--rc:${col}"><i></i><span><b>${esc(r.rank)}</b><small>${R ? `${num(r.rp)} RP${r.max_rank ? ' · max ' + esc(r.max_rank) : ''}` : 'Pas encore de partie classée cette saison'}</small></span></div>
+    <div class="sgrid">${box('K/D', num(s.kd, 2))}${box('Win %', num(s.wr, 1))}${box('Parties', num(s.matches))}
+      ${box('Victoires', num(s.w))}${box('Défaites', num(s.l))}${box('Kills', num(s.k))}</div>
+    ${modes ? `<div class="team-t">Saison en cours · par mode</div><div class="modes">${modes}</div>` : ''}
+    <div class="row" style="margin-top:.5rem">${link}</div></div>
+  <div class="card form r6-lobby">
+    <div class="team-t">Feuille de match</div>
+    <small class="hint">Tape les pseudos vus au tableau des scores : REZ affiche leur rang et leurs stats publiques. Rien n'est lu dans le jeu, zéro risque de ban.</small>
+    <textarea id="r6Allies" rows="2" placeholder="Coéquipiers : pseudo1, pseudo2…">${esc(r6Lobby.allies)}</textarea>
+    <textarea id="r6Enemies" rows="2" placeholder="Adversaires : pseudo1, pseudo2…">${esc(r6Lobby.enemies)}</textarea>
+    <button type="button" class="btn primary" id="r6Go">Analyser les joueurs</button>
+    <div id="r6Res">${r6LobbyHtml()}</div>
+  </div>`;
+}
+function r6Row(p) {
+  if (!p.ok) return `<div class="pl"><i class="r6-dot"></i><span>${esc(p.name)}<small class="bad">${esc(p.err || 'Introuvable')}</small></span><b>—</b></div>`;
+  const s = p.ranked || p.season || {};
+  return `<div class="pl"><i class="r6-dot" style="--rc:${r6Col(p.rank_idx)}"></i><span>${esc(p.name)}<small>${esc(p.rank)}${p.rp ? ' · ' + num(p.rp) + ' RP' : ''} · niv. ${num(p.level)}</small></span><b>${num(s.kd, 2)} · ${num(s.wr, 0)}%</b></div>`;
+}
+function r6LobbyHtml() {
+  if (!r6LobbyRes) return '';
+  if (r6LobbyRes.err) return `<div class="card err">${esc(r6LobbyRes.err)}</div>`;
+  const t = (title, cls, list) => list.length ? `<div class="team-t ${cls}">${title}</div>${list.map(r6Row).join('')}` : '';
+  return t('Avec toi', 'ally', r6LobbyRes.allies) + t('Contre toi', 'enemy', r6LobbyRes.enemies) + '<small class="hint">K/D · % de victoires de la saison (classé si dispo).</small>';
+}
+const splitNames = (s) => s.split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean);
+$('#sOut').addEventListener('input', (e) => {
+  if (e.target.id === 'r6Allies' || e.target.id === 'r6Enemies') {
+    r6Lobby = { allies: $('#r6Allies').value, enemies: $('#r6Enemies').value };
+    store.set('rez.r6lobby', r6Lobby);
+  }
+});
+$('#sOut').addEventListener('click', async (e) => {
+  if (!e.target.closest('#r6Go')) return;
+  const a = splitNames(r6Lobby.allies), en = splitNames(r6Lobby.enemies);
+  if (!a.length && !en.length) return toast('Ajoute au moins un pseudo', true);
+  if (a.length + en.length > 10) return toast('10 joueurs maximum', true);
+  const b = $('#r6Go'); b.disabled = true; b.textContent = 'Analyse…';
+  const opt = (S.players || {}).r6_opt || 'uplay';
+  try {
+    const res = await invoke('r6_lobby', { names: [...a, ...en], platform: opt });
+    r6LobbyRes = { allies: res.slice(0, a.length), enemies: res.slice(a.length) };
+  } catch (err) { r6LobbyRes = { err: String(err) }; }
+  if ($('#r6Res')) $('#r6Res').innerHTML = r6LobbyHtml();
+  if ($('#r6Go')) { $('#r6Go').disabled = false; $('#r6Go').textContent = 'Analyser les joueurs'; }
+});
+
+// ---------- comptes IA (fenêtre officielle, sans clé) ----------
+const accOn = (p) => (S.ai_accounts || []).includes(p);
+const ACC_ICO = {
+  claude: '#d97757', openai: '#10a37f', gemini: '#4c8df6',
+};
+function renderAiAcc() {
+  const P = PROVIDERS[aiProv];
+  const key = hasKey(aiProv), on = accOn(aiProv);
+  $('#aAcc').innerHTML = key
+    ? `<span class="acc-st on">● Clé API ${esc(P.vendor)}</span><small class="hint">Réponses directement dans l'île.</small>`
+    : `<span class="acc-st ${on ? 'on' : ''}">${on ? '● Connecté' : '○ Non connecté'}</span>
+       ${on ? `<button class="btn sm" data-acc-open="${aiProv}">Ouvrir ${esc(P.name)}</button><button class="btn sm" data-acc-out="${aiProv}">Déconnexion</button>`
+            : `<button class="btn sm primary" data-acc-open="${aiProv}">Se connecter avec ${esc(P.name)}</button>`}`;
+  $('#aCfgBtn').classList.toggle('need', !key && !on);
+  $('#aIn').placeholder = key ? `Demande à ${P.name}…` : on ? `Demande à ${P.name} (réponse dans sa fenêtre)` : `Connecte-toi à ${P.name} pour discuter`;
+  $('#pAiAcc').innerHTML = Object.entries(PROVIDERS).map(([id, p]) => {
+    const c = accOn(id);
+    return `<div class="acc-row"><i style="--c:${ACC_ICO[id]}"></i><span><b>${esc(p.name)}</b><small class="${c ? 'ok' : ''}">${c ? 'Connecté' : 'Déconnecté'}${hasKey(id) ? ' · clé API active' : ''}</small></span>
+      ${c ? `<button class="btn sm" data-acc-open="${id}">Ouvrir</button><button class="btn sm" data-acc-out="${id}">Déconnexion</button>`
+          : `<button class="btn sm primary" data-acc-open="${id}">Se connecter</button>`}</div>`;
+  }).join('');
+}
+document.addEventListener('click', async (e) => {
+  const o = e.target.closest('[data-acc-open]'), x = e.target.closest('[data-acc-out]');
+  if (o) {
+    try { await call('ai_web_open', { provider: o.dataset.accOpen, prompt: null }); } catch {}
+    if (!accOn(o.dataset.accOpen)) toast(`Connecte-toi dans la fenêtre ${PROVIDERS[o.dataset.accOpen].name} officielle`);
+  }
+  if (x) {
+    try { await call('ai_web_logout', { provider: x.dataset.accOut }); toast(`${PROVIDERS[x.dataset.accOut].name} déconnecté de REZ`); } catch {}
+  }
+});
+listen('rez://ai-acc', (e) => {
+  const before = S.ai_accounts || [];
+  S.ai_accounts = e.payload || [];
+  for (const p of S.ai_accounts) if (!before.includes(p) && PROVIDERS[p]) toast(`${PROVIDERS[p].name} connecté ✓`);
+  renderAiAcc();
+});
+async function askAccount(text) {
+  const P = PROVIDERS[aiProv];
+  if (!accOn(aiProv)) {
+    await call('ai_web_open', { provider: aiProv, prompt: null }).catch(() => {});
+    return toast(`Connecte-toi à ${P.name}, puis renvoie ta question`);
+  }
+  aIn.value = ''; aIn.style.height = 'auto';
+  addMsg('user', text);
+  try {
+    const copied = await call('ai_web_open', { provider: aiProv, prompt: text });
+    addMsg('bot', copied ? `${P.name} est ouvert : ta question est copiée, colle-la avec Ctrl+V.` : `Question envoyée à ${P.name} dans sa fenêtre officielle.`);
+  } catch (err) { addMsg('bot', String(err), 'err'); }
+}
+
+document.addEventListener('click', (e) => { const u = e.target.closest('[data-open-uri]'); if (u) call('open_uri', { uri: u.dataset.openUri }).catch(() => {}); });
+
 // ---------- init ----------
 (async () => {
   try { S = await invoke('get_settings'); fillSettings(); } catch {}
@@ -1824,7 +2068,8 @@ setInterval(() => checkUpdate(), 6 * 3600e3);
   setVars('pill');
   const st = await invoke('startup_state').catch(() => ({ visible: true, hidden: false }));
   winVisible = st.visible;
-  const [pw, ph] = SIZES[sizeKey()].pill;
+  renderPill();
+  const [pw, ph] = dims('pill');
   winW = 0; winH = 0;
   await fit(pw, ph);
   schedule();
