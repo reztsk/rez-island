@@ -1,6 +1,6 @@
 [package]
 name = "rez"
-version = "1.1.0"
+version = "1.2.0"
 description = "REZ - Dynamic Island Windows 11"
 edition = "2021"
 
@@ -17,12 +17,14 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sha2 = "0.10"
 semver = "1"
+base64 = "0.22"
 
 [dependencies.windows]
 version = "0.58"
 features = [
   "Foundation",
   "Media_Control",
+  "Storage_Streams",
   "Win32_Foundation",
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",
@@ -31,6 +33,10 @@ features = [
   "Win32_System_Variant",
   "Win32_System_Memory",
   "Win32_Security_Cryptography",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_System_SystemInformation",
 ]
 
 [profile.release]

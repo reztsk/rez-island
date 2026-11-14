@@ -6,7 +6,10 @@ Overlay glassmorphism sombre, tray, raccourci global, auto-update 1 clic. Ce pro
 - Aucune lecture ou écriture mémoire, aucun accès aux dossiers des jeux, aucune injection.
 - Multimédia : API Windows publique (SMTC + volume système).
 - Discord : IPC local officiel (Rich Presence).
-- Stats : APIs publiques par pseudo (fortnite-api.com) + profils tracker publics.
+- Stats : APIs publiques par pseudo (fortnite-api.com, HenrikDev pour Valorant, apexlegendsapi.com) + profils tracker publics (R6, Rocket League).
+- Jeu en cours : détecté par le seul **nom** du processus (comme le Gestionnaire des tâches). REZ n'ouvre jamais le processus du jeu.
+- Pochettes : celles fournies par le lecteur via SMTC, ou en HD via iTunes Search (API publique).
+- Mode Focus : coupe les notifications Windows de Discord (même réglage que Paramètres > Notifications), puis les restaure.
 - Overlay = simple fenêtre "toujours au-dessus". Les jeux en **plein écran exclusif** passent par-dessus → mettre le jeu en **plein écran fenêtré / sans bordure**.
 
 ## Structure
@@ -87,12 +90,22 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 |---|---|
 | Île | Pilule collée en haut au centre (heure, musique en cours / météo). Clic → l'île s'ouvre |
 | Ouvrir / réduire | `Ctrl+B` (modifiable), clic sur la pilule ou l'icône tray, `Échap` pour réduire |
+| Masquer / afficher l'île | `Ctrl+N` (modifiable, Retour arrière pour le désactiver). REZ reste dans le tray |
+| Déplacer l'île | Paramètres → « Déverrouiller l'emplacement », puis glisser la pilule ou l'en-tête (multi-écrans). 🔒 pour la reverrouiller |
+| Opacité | Paramètres → curseur « Opacité du verre » |
+| Lecteur | Pochette HD + icône de l'app, ±10 s, piste précédente / suivante, barre de progression cliquable |
+| Accueil | Onglets Aperçu (widgets Focus, Système, Discord, Jeu, raccourcis) / Météo (heure par heure, 5 jours) / Outils |
+| Mode Focus | Accueil → Outils : minuteur. Les notifications Discord sont masquées jusqu'à la fin |
+| Discord | Connexion auto quand Discord est lancé : photo de profil, présence auto selon le jeu, présence perso |
+| Trackers | Stats → choisir le jeu → lier son ID. Valorant : rang + dernière partie avec alliés et adversaires. Apex : statut en direct |
 | Taille | Paramètres → Compact / Large (transition animée) |
 | Pilule permanente | Paramètres → « Pilule toujours visible » (désactivé = REZ disparaît complètement une fois réduit) |
 | Quitter | clic droit tray → Quitter, ou Paramètres → Quitter |
 | Épingler un dossier | glisser-déposer sur REZ, ou formulaire Accès rapide |
 | Chat IA | clé API Anthropic dans Paramètres (modèle par défaut `claude-opus-5-5`) |
 | Stats Fortnite | clé gratuite sur fortnite-api.com → Paramètres |
+| Stats Valorant | clé gratuite HenrikDev (api.henrikdev.xyz, via leur Discord) → Paramètres |
+| Stats Apex | clé gratuite sur apexlegendsapi.com → Paramètres |
 | Discord | créer une app sur discord.com/developers → Client ID dans Paramètres |
 | Démarrage auto | Paramètres → Lancer avec Windows (démarre masqué dans le tray) |
 

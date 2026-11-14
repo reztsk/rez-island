@@ -5,7 +5,8 @@ use std::io::{Read, Write};
 
 pub struct Ipc {
     pipe: File,
-    start: u64,
+    /// Profil renvoyé par Discord au handshake (id, username, global_name, avatar).
+    pub user: Value,
 }
 
 impl Ipc {
@@ -13,13 +14,20 @@ impl Ipc {
         for i in 0..10 {
             let path = format!(r"\\.\pipe\discord-ipc-{i}");
             if let Ok(pipe) = OpenOptions::new().read(true).write(true).open(&path) {
-                let mut ipc = Ipc { pipe, start: crate::now_ms() / 1000 };
+                let mut ipc = Ipc { pipe, user: Value::Null };
                 ipc.send(0, &json!({ "v": 1, "client_id": client_id }))?;
                 let (op, v) = ipc.recv()?;
                 if op == 2 || v["evt"] == "ERROR" {
                     let msg = v["message"].as_str().or(v["data"]["message"].as_str()).unwrap_or("handshake refusé");
                     return Err(format!("Discord : {msg}"));
                 }
+                let u = &v["data"]["user"];
+                ipc.user = json!({
+                    "id": u["id"],
+                    "username": u["username"],
+                    "name": u["global_name"].as_str().or(u["username"].as_str()).unwrap_or("Discord"),
+                    "avatar": avatar_url(u),
+                });
                 return Ok(ipc);
             }
         }
@@ -48,26 +56,56 @@ impl Ipc {
         Ok((op, serde_json::from_slice(&data).unwrap_or(Value::Null)))
     }
 
-    pub fn set_activity(&mut self, act: Option<(&str, &str)>) -> Result<(), String> {
-        let activity = match act {
-            Some((details, state)) => json!({
-                "details": details,
-                "state": state,
-                "timestamps": { "start": self.start },
-                "assets": { "large_image": "rez", "large_text": "REZ Dynamic Island" }
-            }),
-            None => Value::Null,
-        };
+    /// `activity` = objet activité Discord, ou Null pour effacer.
+    pub fn set_activity(&mut self, activity: &Value) -> Result<(), String> {
         let nonce = format!("rez-{}", crate::now_ms());
         self.send(1, &json!({
             "cmd": "SET_ACTIVITY",
             "args": { "pid": std::process::id(), "activity": activity },
             "nonce": nonce
         }))?;
-        let (_, r) = self.recv()?;
-        if r["evt"] == "ERROR" {
-            return Err(r["data"]["message"].as_str().unwrap_or("Erreur Discord").to_string());
+        // ignore les éventuels événements jusqu'à la réponse à notre nonce
+        for _ in 0..8 {
+            let (op, r) = self.recv()?;
+            if op == 2 {
+                return Err("Discord a fermé la connexion".into());
+            }
+            if r["evt"] == "ERROR" {
+                return Err(r["data"]["message"].as_str().unwrap_or("Erreur Discord").to_string());
+            }
+            if r["nonce"] == nonce.as_str() {
+                return Ok(());
+            }
         }
         Ok(())
     }
+}
+
+/// Photo de profil réelle (CDN Discord) ou avatar par défaut.
+pub fn avatar_url(u: &Value) -> String {
+    let id = u["id"].as_str().unwrap_or("");
+    match u["avatar"].as_str() {
+        Some(h) if !h.is_empty() => format!("https://cdn.discordapp.com/avatars/{id}/{h}.png?size=128"),
+        _ => {
+            let n = id.parse::<u64>().map(|x| (x >> 22) % 6).unwrap_or(0);
+            format!("https://cdn.discordapp.com/embed/avatars/{n}.png")
+        }
+    }
+}
+
+/// Activité Rich Presence standard REZ.
+pub fn activity(details: &str, state: &str, start: Option<u64>, end: Option<u64>) -> Value {
+    let mut ts = json!({});
+    if let Some(s) = start {
+        ts["start"] = json!(s);
+    }
+    if let Some(e) = end {
+        ts["end"] = json!(e);
+    }
+    json!({
+        "details": details,
+        "state": state,
+        "timestamps": ts,
+        "assets": { "large_image": "rez", "large_text": "REZ Dynamic Island" }
+    })
 }

@@ -41,7 +41,8 @@ $url = "https://github.com/$repo/releases/download/$tag/REZ.exe"
 
 # 4. commit + release GitHub (asset dispo AVANT de publier version.json)
 git add -A
-git commit -m "release $tag" | Out-Null
+$coauthor = 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
+git commit -m "release $tag" -m $coauthor | Out-Null
 git push origin main
 $assets = @('dist/REZ.exe')
 if ($setup) { Copy-Item $setup.FullName "dist/REZ-setup-$Version.exe" -Force; $assets += "dist/REZ-setup-$Version.exe" }
@@ -51,7 +52,7 @@ gh release create $tag @assets --title "REZ $tag" --notes ($(if ($Notes) { $Note
 $json = [ordered]@{ version = $Version; url = $url; sha256 = $sha; notes = $Notes } | ConvertTo-Json
 [IO.File]::WriteAllText((Join-Path (Get-Location) 'version.json'), $json + "`n")
 git add version.json
-git commit -m "version.json -> $tag" | Out-Null
+git commit -m "version.json -> $tag" -m $coauthor | Out-Null
 git push origin main
 
 Write-Host "Publié : $tag"
