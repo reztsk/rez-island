@@ -1,6 +1,6 @@
 {
-    "version":  "1.1.0",
-    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.1.0/REZ.exe",
-    "sha256":  "fa0da845efbb9099c2de0aa53c104a6a54fdfffeb68d4669e68ecc6ea24db8b6",
-    "notes":  "Dynamic Island compacte ancree en haut (pilule + ile animee), option Compact/Large, pilule permanente."
+    "version":  "1.2.0",
+    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.2.0/REZ.exe",
+    "sha256":  "d230b017d288146672526ce19149573c8dc16b9ae3656b422b04d4bc428b9e18",
+    "notes":  "v1.2.0 : lecteur avec pochettes HD + icone de l\u0027app et +/-10 s, Discord auto (photo de profil, presence selon le jeu), trackers Fortnite/Valorant/Apex/R6/RL (derniere partie Valorant avec allies et adversaires), accueil a onglets (widgets, meteo detaillee, outils), meteo : ville saisie enfin prise en compte, ile deplacable (Deverrouiller l\u0027emplacement), Ctrl+N pour masquer/afficher, Mode Focus (coupe les notifs Discord), opacite du verre reglable."
 }
