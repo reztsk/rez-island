@@ -1,6 +1,6 @@
 [package]
 name = "rez"
-version = "1.4.1"
+version = "1.5.0"
 description = "REZ - Dynamic Island Windows 11"
 edition = "2021"
 
@@ -23,6 +23,10 @@ base64 = "0.22"
 version = "0.58"
 features = [
   "Foundation",
+  "Foundation_Collections",
+  "Gaming_Input",
+  "Devices_Power",
+  "System_Power",
   "Media_Control",
   "Storage_Streams",
   "Win32_Foundation",
@@ -40,6 +44,13 @@ features = [
   "Win32_System_Performance",
   "Win32_System_Pipes",
   "Win32_Graphics_Dxgi",
+  "Win32_Devices_DeviceAndDriverInstallation",
+  "Win32_Devices_HumanInterfaceDevice",
+  "Win32_Devices_Properties",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Power",
+  "Win32_System_ProcessStatus",
   "Wdk_Graphics_Direct3D",
 ]
 

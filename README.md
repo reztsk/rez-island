@@ -14,6 +14,8 @@ Overlay glassmorphism sombre, tray, raccourci global, auto-update 1 clic. Ce pro
 - Vocal Discord : RPC local officiel, autorisé par toi dans Discord (scopes `rpc`, `rpc.voice.read`, `rpc.voice.write`).
 - Mélangeur audio : sessions audio Windows (comme le mélangeur de volume). Aucun handle sur les jeux.
 - Téléchargements : manifestes Steam `steamapps/appmanifest_*.acf` (jamais `steamapps/common`), fichiers partiels du dossier Téléchargements, API Web locale de qBittorrent, débit réseau.
+- Performance PC : compteurs PDH + liste des processus tenue par Windows (temps CPU, mémoire privée). **Aucun handle ouvert sur un processus**, donc jamais sur un jeu.
+- Batteries : propriété Bluetooth publiée par Windows, Windows.Gaming.Input (manettes Xbox), HID++ Logitech en **lecture seule** (comme G HUB / Solaar), batterie du PC. REZ n'envoie jamais de commande inconnue à un appareil.
 - Overlay = simple fenêtre "toujours au-dessus". Les jeux en **plein écran exclusif** passent par-dessus → mettre le jeu en **plein écran fenêtré / sans bordure**.
 
 ## Structure
@@ -38,6 +40,8 @@ REZ/
       ├─ media.rs          lecture/pause/suivant + volume
       ├─ audio.rs          mélangeur audio par application
       ├─ hw.rs             GPU, VRAM, températures, débit réseau
+      ├─ perf.rs           menu Performance : cœurs, fréquence, disque, réseau, applis gourmandes
+      ├─ devices.rs        périphériques sans fil + batterie / charge
       ├─ downloads.rs      suivi des téléchargements
       ├─ voice.rs          thread Discord unique : présence + vocal, réessais silencieux
       ├─ discord.rs        connexion IPC Discord non bloquante
@@ -99,27 +103,32 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 | Île | Pilule collée en haut au centre (heure, musique en cours / météo). Clic → l'île s'ouvre |
 | Ouvrir / réduire | `Ctrl+B` (modifiable), clic sur la pilule ou l'icône tray, `Échap` pour réduire |
 | Masquer / afficher l'île | `Ctrl+N` (modifiable, Retour arrière pour le désactiver). REZ reste dans le tray |
-| Position | Paramètres → Haut / Gauche / Droite. Les panneaux s'ouvrent toujours vers l'intérieur de l'écran |
-| Déplacer l'île | Paramètres → « Déverrouiller l'emplacement », glisser la pilule ou l'en-tête (multi-écrans), puis 🔒 : l'île reste exactement là |
-| Opacité | Paramètres → curseur « Opacité du verre » |
+| Position | Réglages (⚙ en haut) → Haut / Gauche / Droite. Les panneaux s'ouvrent toujours vers l'intérieur de l'écran |
+| Déplacer l'île | Réglages → « Déverrouiller l'emplacement », glisser la pilule ou l'en-tête (multi-écrans), puis 🔒 : l'île reste exactement là |
+| Opacité | Réglages → curseur « Opacité du verre » |
+| Thèmes | Réglages → Apparence : Violet, Cyan, Rose, Vert, Orange, Graphite |
+| Réglages | Bouton ⚙ en haut de l'île : page dédiée (Apparence, Position, Raccourcis, Services, Système) |
 | Lecteur | Pochette HD + icône de l'app, ±10 s, piste précédente / suivante, barre de progression cliquable |
 | Mélangeur audio | Multimédia → Mélangeur audio : un volume (et un muet) par application qui joue du son |
-| Système | Accueil → jauges CPU, GPU, RAM, VRAM + températures CPU / GPU (si Windows les fournit) |
+| Système | Accueil → jauges CPU, GPU, RAM, VRAM + températures CPU / GPU (si Windows les fournit). Clic → Performance PC |
+| Performance PC | Dock → courbes en direct (CPU, GPU, RAM, VRAM, disque, réseau), charge par cœur, fréquence, processus / threads / handles, applications les plus gourmandes (CPU ou mémoire) |
+| Périphériques | Dock → casque, manette, souris, clavier sans fil : % de batterie, icône par type, vert si bon, orange en charge ou bas, rouge si faible (alerte). Résumé sur l'accueil |
+| Calculatrice | Accueil → Outils → Calcul : calculatrice intégrée (clavier physique, historique, √, xʸ, π, %) + conversion d'unités (longueur, masse, température, volume, vitesse, surface, données, temps, énergie) |
 | Téléchargements | Accueil → Téléch. : Steam (% exact + temps restant), qBittorrent, navigateurs. Progression aussi dans la pilule |
 | Accueil | Onglets Aperçu (widgets Focus, Système, Discord, Jeu, raccourcis) / Météo (heure par heure, 5 jours) / Outils |
 | Mode Focus | Accueil → Outils : minuteur. Les notifications Discord sont masquées jusqu'à la fin |
 | Discord | Assistant intégré (vue Discord) : colle l'Application ID, REZ le vérifie auprès de Discord et l'enregistre. Connexion auto, réessais discrets si Discord n'est pas prêt. Photo de profil, présence auto selon le jeu, présence perso |
 | Vocal Discord | Client ID + Client Secret de ton app (redirection `http://localhost`), puis « Activer le vocal » : membres du salon, qui parle (cercle vert), micro / casque / quitter |
 | Trackers | Stats → choisir le jeu → lier son ID. Valorant : rang + dernière partie avec alliés et adversaires. Apex : statut en direct |
-| Taille | Paramètres → Compact / Large (transition animée) |
-| Pilule permanente | Paramètres → « Pilule toujours visible » (désactivé = REZ disparaît complètement une fois réduit) |
-| Quitter | clic droit tray → Quitter, ou Paramètres → Quitter |
+| Taille | Réglages → Compact / Large (transition animée) |
+| Pilule permanente | Réglages → « Pilule toujours visible » (désactivé = REZ disparaît complètement une fois réduit) |
+| Quitter | clic droit tray → Quitter, ou Réglages → Quitter |
 | Épingler un dossier | glisser-déposer sur REZ, ou formulaire Accès rapide |
 | Chat IA | Optionnel. Vue IA → Claude / ChatGPT / Gemini → « Obtenir une clé » ouvre la page officielle. Modèles par défaut : `claude-opus-5-5`, `gpt-5-mini`, `gemini-2.5-flash` |
-| Stats Fortnite | clé gratuite sur fortnite-api.com → Paramètres |
-| Stats Valorant | clé gratuite HenrikDev (api.henrikdev.xyz, via leur Discord) → Paramètres |
-| Stats Apex | clé gratuite sur apexlegendsapi.com → Paramètres |
+| Stats Fortnite | clé gratuite sur fortnite-api.com → Réglages |
+| Stats Valorant | clé gratuite HenrikDev (api.henrikdev.xyz, via leur Discord) → Réglages |
+| Stats Apex | clé gratuite sur apexlegendsapi.com → Réglages |
 | Discord | assistant dans la vue Discord : créer l'app REZ sur discord.com/developers, coller l'Application ID |
-| Démarrage auto | Paramètres → Lancer avec Windows (démarre masqué dans le tray) |
+| Démarrage auto | Réglages → Lancer avec Windows (démarre masqué dans le tray) |
 
 Les clés API sont chiffrées avec DPAPI (liées à ta session Windows). Elles ne sont jamais renvoyées à l'interface.

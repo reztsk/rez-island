@@ -40,6 +40,8 @@ pub struct Settings {
     pub size: String,
     pub pill_mode: bool,
     pub opacity: f64,
+    /// Couleur d accent : violet | cyan | rose | vert | orange | mono.
+    pub theme: String,
     pub locked: bool,
     /// "top" | "left" | "right" (préréglages) | "free" (posée à la main, mémorisée dans `anchor`).
     pub dock: String,
@@ -80,6 +82,7 @@ impl Default for Settings {
             size: "compact".into(),
             pill_mode: true,
             opacity: 0.72,
+            theme: "violet".into(),
             locked: true,
             dock: String::new(),
             anchor: None,

@@ -1,12 +1,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
+mod devices;
 mod discord;
 mod downloads;
 mod games;
 mod hw;
 mod media;
 mod net;
+mod perf;
 mod secure;
 mod settings;
 mod sys;
@@ -519,6 +521,26 @@ async fn sys_info() -> Result<Value, String> {
     .await
 }
 
+/// Menu Performance : CPU par cœur, fréquence, RAM, disque, réseau, GPU, applications gourmandes.
+#[tauri::command]
+async fn perf_info() -> Result<Value, String> {
+    blocking(|| {
+        let mut v = perf::info();
+        let s = hw::sensors();
+        for k in ["gpu", "gpu_name", "vram_used", "vram_total", "gpu_temp", "cpu_temp"] {
+            v[k] = s[k].clone();
+        }
+        Ok(v)
+    })
+    .await
+}
+
+/// Périphériques sans fil + batterie (cache 20 s, `force` = nouvelle détection).
+#[tauri::command]
+async fn devices_list(force: bool) -> Result<Vec<Value>, String> {
+    blocking(move || Ok(devices::list(force))).await
+}
+
 // ---------- commandes : mélangeur audio ----------
 #[tauri::command]
 async fn mixer_list() -> Result<Vec<Value>, String> {
@@ -589,7 +611,6 @@ fn launch(target: String) -> Result<(), String> {
         "screenshot" => "ms-screenclip:",
         "settings" => "ms-settings:",
         "taskmgr" => "taskmgr",
-        "calc" => "calc",
         "notepad" => "notepad",
         "explorer" => "explorer",
         _ => return Err("Application inconnue".into()),
@@ -804,6 +825,7 @@ fn diag() {
     let _ = sys::info();
     let _ = hw::sensors();
     let _ = hw::net_down();
+    let _ = perf::info();
     std::thread::sleep(Duration::from_millis(1500));
     let scan = games::scan();
     let dl = std::env::var("USERPROFILE").map(|p| Path::new(&p).join("Downloads")).ok();
@@ -811,6 +833,8 @@ fn diag() {
     let out = json!({
         "sys": sys::info(),
         "sensors": hw::sensors(),
+        "devices": devices::list(true),
+        "perf": perf::info(),
         "mixer": audio::list(),
         "downloads": dls,
         "net": net,
@@ -916,6 +940,7 @@ fn main() {
             std::thread::spawn(move || monitor(h));
             let h = handle.clone();
             std::thread::spawn(move || voice::run(h, vrx));
+            std::thread::spawn(devices::warm_up);
             Ok(())
         })
         .on_window_event(|w, ev| match ev {
@@ -971,6 +996,8 @@ fn main() {
             quit_app,
             app_version,
             sys_info,
+            perf_info,
+            devices_list,
             mixer_list,
             mixer_set,
             voice_state,

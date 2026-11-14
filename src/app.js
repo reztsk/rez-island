@@ -129,12 +129,17 @@ $('#pillFace').onclick = () => { if (dragged) { dragged = false; return; } expan
 $('#btnCollapse').onclick = collapse;
 $('#btnLock').onclick = () => setLocked(true);
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !document.activeElement?.classList.contains('sc')) collapse();
+  if (e.key !== 'Escape' || document.activeElement?.classList.contains('sc')) return;
+  if (view === 'calc' && cMode === 'calc' && (cExpr || cJust)) return; // Échap efface la calculatrice
+  collapse();
 });
 
 // ---------- navigation ----------
+const PAGES = ['settings', 'calc'];   // pages dédiées (hors dock) : bouton retour
+let backTo = 'home';
 function go(v) {
   if (v !== view) $('#views').scrollTop = 0;
+  if (PAGES.includes(v) && !PAGES.includes(view)) backTo = view;
   view = v;
   $$('.view').forEach((el) => el.classList.toggle('active', el.dataset.view === v));
   $$('.dock button').forEach((b) => b.classList.toggle('active', b.dataset.go === v));
@@ -157,21 +162,25 @@ document.addEventListener('click', (e) => {
   }
   const sb = e.target.closest('[data-sub-go]');
   if (sb) goSub(sb.dataset.subGo);
+  if (e.target.closest('[data-back]')) go(PAGES.includes(view) ? backTo : 'home');
 });
+$('#btnSettings').onclick = () => go(view === 'settings' ? backTo : 'settings');
 $('#homeTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-sub]'); if (b) goSub(b.dataset.sub); });
 function onView() {
   if (mode !== 'open') return;
   if (view === 'home' && Date.now() - lastWeather > 10 * 60e3) loadWeather();
   if (view === 'stats') loadStats(false);
   if (view === 'ai') setTimeout(() => $('#aIn').focus(), 60);
+  $('#btnSettings').classList.toggle('on', view === 'settings');
 }
 
 // ---------- timers (tout est en pause quand REZ est masqué) ----------
 function focusLeft() { return live.focus_until ? live.focus_until - nowS() : 0; }
-let mixTimer = null, msub = 'player';
+let mixTimer = null, msub = 'player', perfTimer = null, devTimer = null;
 function schedule() {
   clearInterval(clockTimer); clearInterval(mediaTimer); clearInterval(sysTimer); clearInterval(mixTimer);
-  clockTimer = mediaTimer = sysTimer = mixTimer = null;
+  clearInterval(perfTimer); clearInterval(devTimer);
+  clockTimer = mediaTimer = sysTimer = mixTimer = perfTimer = devTimer = null;
   if (!winVisible) return;
   tick();
   clockTimer = setInterval(tick, mode === 'open' || focusLeft() > 0 ? 1000 : 5000);
@@ -180,6 +189,11 @@ function schedule() {
   mediaTimer = setInterval(refreshMedia, fast ? 2000 : 5000);
   if (mode === 'open' && view === 'home' && sub === 'ov') { refreshSys(); sysTimer = setInterval(refreshSys, 2000); }
   if (mode === 'open' && view === 'media' && msub === 'mix') { refreshMix(); mixTimer = setInterval(refreshMix, 900); }
+  if (mode === 'open' && view === 'perf') { refreshPerf(); perfTimer = setInterval(refreshPerf, 1000); }
+  // batteries : la liste est en cache côté Rust (20 s), la détection reste très légère
+  const devView = mode === 'open' && view === 'devices';
+  refreshDevices(devView);
+  devTimer = setInterval(() => refreshDevices(false), devView ? 15e3 : 60e3);
 }
 setInterval(() => { if (winVisible && Date.now() - lastWeather > 15 * 60e3) loadWeather(); }, 60e3);
 
@@ -981,34 +995,341 @@ $('#aClear').onclick = () => { chat = []; $('#aLog').innerHTML = ''; addMsg('bot
 
 // ---------- outils : mini-apps ----------
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-launch]'); if (b) call('launch', { target: b.dataset.launch }).catch(() => {}); });
+
+// segmentés à deux choix (indicateur glissant)
+function seg2(el, val, attr) {
+  const bs = [...el.querySelectorAll('button')];
+  bs.forEach((b) => b.classList.toggle('on', b.dataset[attr] === val));
+  el.classList.toggle('large', bs[1]?.dataset[attr] === val);
+}
+
+// ---------- calculatrice intégrée ----------
+// Analyseur maison (aucun eval) : + − × ÷ ^ % √ π, parenthèses, multiplication implicite.
 function calc(src) {
-  const s = src.replace(/\s+/g, '').replace(/,/g, '.').replace(/[x×]/gi, '*').replace(/÷/g, '/');
+  const s = String(src).replace(/\s+/g, '').replace(/,/g, '.').replace(/[x×]/gi, '*').replace(/÷/g, '/').replace(/−/g, '-').replace(/π/g, 'p');
   let i = 0;
   const peek = () => s[i];
   const fail = () => { throw new Error(); };
-  function atom() {
-    if (peek() === '-') { i++; return -atom(); }
-    if (peek() === '+') { i++; return atom(); }
-    let v;
-    if (peek() === '(') { i++; v = expr(); if (s[i++] !== ')') fail(); }
-    else { const m = /^\d*\.?\d+(?:e[+-]?\d+)?/i.exec(s.slice(i)); if (!m) fail(); i += m[0].length; v = parseFloat(m[0]); }
-    if (peek() === '%') { i++; v /= 100; }
-    return v;
+  function prim() {
+    const c = peek();
+    if (c === '√') { i++; return Math.sqrt(post()); }
+    if (c === 'p') { i++; return Math.PI; }
+    if (c === '(') { i++; const v = expr(); if (i < s.length) { if (s[i] !== ')') fail(); i++; } return v; }
+    const m = /^(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/i.exec(s.slice(i));
+    if (!m) fail();
+    i += m[0].length;
+    return parseFloat(m[0]);
   }
-  function pow() { const b = atom(); if (peek() === '^') { i++; return b ** pow(); } return b; }
-  function term() { let v = pow(); while (peek() === '*' || peek() === '/') { const o = s[i++]; const r = pow(); v = o === '*' ? v * r : v / r; } return v; }
+  function post() { let v = prim(); while (peek() === '%') { i++; v /= 100; } return v; }
+  function pow() { const b = post(); if (peek() === '^') { i++; return b ** unary(); } return b; }
+  function unary() { if (peek() === '-') { i++; return -unary(); } if (peek() === '+') { i++; return unary(); } return pow(); }
+  function term() {
+    let v = unary();
+    for (;;) {
+      const c = peek();
+      if (c === '*' || c === '/') { i++; const r = unary(); v = c === '*' ? v * r : v / r; }
+      else if (c && /[(\dp√.]/.test(c)) v *= unary();      // 2π, 3(4+1)
+      else return v;
+    }
+  }
   function expr() { let v = term(); while (peek() === '+' || peek() === '-') { const o = s[i++]; const r = term(); v = o === '+' ? v + r : v - r; } return v; }
+  if (!s) fail();
   const v = expr();
   if (i !== s.length || !isFinite(v)) fail();
   return v;
 }
-$('#calcIn').addEventListener('input', () => {
-  const t = $('#calcIn').value.trim();
-  try { $('#calcOut').textContent = t ? '= ' + num(calc(t), 8) : '='; } catch { $('#calcOut').textContent = '= …'; }
+const fmtNum = (v) => {
+  if (!isFinite(v)) return 'Erreur';
+  const a = Math.abs(v);
+  if (a !== 0 && (a >= 1e15 || a < 1e-9)) return v.toExponential(6).replace('.', ',');
+  return Number(v.toPrecision(12)).toLocaleString('fr-FR', { maximumFractionDigits: 10 });
+};
+const rawNum = (v) => { const a = Math.abs(v); return a !== 0 && (a >= 1e15 || a < 1e-9) ? v.toExponential(10) : String(Number(v.toPrecision(14))).replace('.', ','); };
+let cExpr = '', cJust = false, cMode = 'calc';
+let cHist = store.get('rez.calcHist', []);
+function calcRender() {
+  const big = $('#cRes'), small = $('#cExpr');
+  if (cJust) {
+    small.textContent = cHist[0] ? cHist[0].e + ' =' : ' ';
+    big.textContent = cHist[0]?.r ?? '0';
+  } else {
+    big.textContent = cExpr || '0';
+    let prev = ' ';
+    if (/[+−×÷^%√π(]/.test(cExpr)) { try { prev = '= ' + fmtNum(calc(cExpr)); } catch {} }
+    small.textContent = prev;
+  }
+  const n = big.textContent.length;
+  big.className = 'calc-res' + (n > 18 ? ' xs' : n > 11 ? ' sm' : '');
+  big.classList.remove('err');
+  big.scrollLeft = big.scrollWidth; small.scrollLeft = small.scrollWidth;   // affiche la fin de l'expression
+}
+function calcHistRender() {
+  $('#cHistList').innerHTML = cHist.length
+    ? cHist.map((h, i) => `<button class="h-row" data-h="${i}"><small>${esc(h.e)} =</small><b>${esc(h.r)}</b></button>`).join('')
+    : '<p class="hint">Aucun calcul pour l\'instant.</p>';
+}
+function cPress(k) {
+  if (k === 'clear') { cExpr = ''; cJust = false; }
+  else if (k === 'back') { if (cJust) { cJust = false; cExpr = ''; } else cExpr = cExpr.slice(0, -1); }
+  else if (k === '=') {
+    if (!cExpr) return;
+    try {
+      const v = calc(cExpr);
+      cHist.unshift({ e: cExpr, r: fmtNum(v), raw: rawNum(v) });
+      cHist = cHist.slice(0, 40);
+      store.set('rez.calcHist', cHist);
+      cExpr = rawNum(v); cJust = true;
+      calcHistRender();
+    } catch { $('#cRes').classList.add('err'); setTimeout(() => $('#cRes').classList.remove('err'), 450); return; }
+  } else {
+    const op = /^[+−×÷^%]/.test(k);
+    if (cJust) { if (!op) cExpr = ''; cJust = false; }
+    if (/^[+×÷^]/.test(k) && /[+−×÷^]$/.test(cExpr)) cExpr = cExpr.slice(0, -1);   // remplace l'opérateur
+    if (/^[+×÷^%]/.test(k) && !cExpr) return;
+    if (k === ',') { const last = cExpr.match(/[\d,]*$/)[0]; if (last.includes(',')) return; if (!last) k = '0,'; }
+    if (cExpr.length < 80) cExpr += k;
+  }
+  calcRender();
+}
+$('#cKeys').parentElement.addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) cPress(b.dataset.k); });
+$('#cHistBtn').onclick = () => { calcHistRender(); $('#cHist').classList.toggle('hidden'); };
+$('#cHistClr').onclick = () => { cHist = []; store.set('rez.calcHist', cHist); calcHistRender(); };
+$('#cHistList').addEventListener('click', (e) => {
+  const r = e.target.closest('[data-h]');
+  if (!r) return;
+  cExpr = cHist[+r.dataset.h].raw || ''; cJust = false;
+  $('#cHist').classList.add('hidden');
+  calcRender();
 });
-$('#calcIn').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { try { $('#calcIn').value = String(+calc($('#calcIn').value).toPrecision(12)); $('#calcOut').textContent = '='; } catch {} }
+const C_KEYS = { Enter: '=', '=': '=', Backspace: 'back', Delete: 'clear', '*': '×', x: '×', X: '×', '/': '÷', '-': '−', '+': '+', '.': ',', ',': ',', '(': '(', ')': ')', '^': '^', '%': '%', p: 'π', r: '√' };
+document.addEventListener('keydown', (e) => {
+  if (mode !== 'open' || view !== 'calc' || cMode !== 'calc' || e.ctrlKey || e.altKey) return;
+  if (e.target.closest?.('input, textarea, select')) return;
+  const k = /^\d$/.test(e.key) ? e.key : e.key === 'Escape' && (cExpr || cJust) ? 'clear' : C_KEYS[e.key];
+  if (!k) return;
+  e.preventDefault();
+  cPress(k);
+  const b = $(`#views [data-view="calc"] [data-k="${CSS.escape(k)}"]`);
+  if (b) { b.classList.add('hit'); setTimeout(() => b.classList.remove('hit'), 120); }
 });
+
+// conversion d'unités
+const UNITS = {
+  len: ['Longueur', [['mm', 'Millimètre', 1e-3], ['cm', 'Centimètre', 1e-2], ['m', 'Mètre', 1], ['km', 'Kilomètre', 1e3], ['po', 'Pouce', 0.0254], ['pi', 'Pied', 0.3048], ['yd', 'Yard', 0.9144], ['mi', 'Mile', 1609.344]]],
+  mass: ['Masse', [['mg', 'Milligramme', 1e-6], ['g', 'Gramme', 1e-3], ['kg', 'Kilogramme', 1], ['t', 'Tonne', 1e3], ['oz', 'Once', 0.028349523125], ['lb', 'Livre (lb)', 0.45359237], ['st', 'Stone', 6.35029318]]],
+  temp: ['Température', [['°C', 'Celsius'], ['°F', 'Fahrenheit'], ['K', 'Kelvin']]],
+  vol: ['Volume', [['mL', 'Millilitre', 1e-3], ['cL', 'Centilitre', 1e-2], ['L', 'Litre', 1], ['m³', 'Mètre cube', 1e3], ['tasse', 'Tasse US', 0.2365882365], ['fl oz', 'Once liquide US', 0.0295735295625], ['gal', 'Gallon US', 3.785411784]]],
+  speed: ['Vitesse', [['m/s', 'Mètre/seconde', 1], ['km/h', 'Kilomètre/heure', 1 / 3.6], ['mph', 'Mile/heure', 0.44704], ['nd', 'Nœud', 1852 / 3600], ['Mach', 'Mach', 340.29]]],
+  area: ['Surface', [['cm²', 'Centimètre carré', 1e-4], ['m²', 'Mètre carré', 1], ['a', 'Are', 100], ['ha', 'Hectare', 1e4], ['km²', 'Kilomètre carré', 1e6], ['pi²', 'Pied carré', 0.09290304], ['acre', 'Acre', 4046.8564224]]],
+  data: ['Données', [['bit', 'Bit', 0.125], ['o', 'Octet', 1], ['Ko', 'Kilooctet', 1e3], ['Mo', 'Mégaoctet', 1e6], ['Go', 'Gigaoctet', 1e9], ['To', 'Téraoctet', 1e12], ['Kio', 'Kibioctet', 1024], ['Mio', 'Mébioctet', 1048576], ['Gio', 'Gibioctet', 1073741824]]],
+  time: ['Temps', [['ms', 'Milliseconde', 1e-3], ['s', 'Seconde', 1], ['min', 'Minute', 60], ['h', 'Heure', 3600], ['j', 'Jour', 86400], ['sem', 'Semaine', 604800], ['an', 'Année', 31557600]]],
+  energy: ['Énergie', [['J', 'Joule', 1], ['kJ', 'Kilojoule', 1e3], ['cal', 'Calorie', 4.184], ['kcal', 'Kilocalorie', 4184], ['Wh', 'Wattheure', 3600], ['kWh', 'Kilowattheure', 3.6e6]]],
+};
+let uState = store.get('rez.units', { cat: 'len', from: 'km', to: 'mi' });
+const toBase = (cat, u, v) => cat === 'temp' ? (u === '°C' ? v : u === '°F' ? (v - 32) * 5 / 9 : v - 273.15) : v * UNITS[cat][1].find((x) => x[0] === u)[2];
+const fromBase = (cat, u, v) => cat === 'temp' ? (u === '°C' ? v : u === '°F' ? v * 9 / 5 + 32 : v + 273.15) : v / UNITS[cat][1].find((x) => x[0] === u)[2];
+function convFill() {
+  const list = UNITS[uState.cat][1];
+  if (!list.some((x) => x[0] === uState.from)) uState.from = list[0][0];
+  if (!list.some((x) => x[0] === uState.to)) uState.to = list[Math.min(1, list.length - 1)][0];
+  $('#uCats').innerHTML = Object.entries(UNITS).map(([k, [l]]) => `<button data-cat="${k}" class="${k === uState.cat ? 'on' : ''}">${l}</button>`).join('');
+  const opts = list.map(([k, l]) => `<option value="${esc(k)}">${esc(l)} (${esc(k)})</option>`).join('');
+  $('#uFrom').innerHTML = opts; $('#uTo').innerHTML = opts;
+  $('#uFrom').value = uState.from; $('#uTo').value = uState.to;
+  convRun();
+}
+function convRun() {
+  store.set('rez.units', uState);
+  const list = UNITS[uState.cat][1];
+  let v;
+  try { v = calc($('#uIn').value || '0'); } catch { $('#uOut').textContent = '—'; $('#uAll').innerHTML = ''; return; }
+  const base = toBase(uState.cat, uState.from, v);
+  $('#uOut').textContent = fmtNum(fromBase(uState.cat, uState.to, base));
+  $('#uAll').innerHTML = list.filter((x) => x[0] !== uState.from).map(([k, l]) =>
+    `<button class="u-row${k === uState.to ? ' on' : ''}" data-u="${esc(k)}"><span>${esc(l)}</span><b>${fmtNum(fromBase(uState.cat, k, base))} <small>${esc(k)}</small></b></button>`).join('');
+}
+$('#uCats').addEventListener('click', (e) => { const b = e.target.closest('[data-cat]'); if (b) { uState.cat = b.dataset.cat; uState.from = uState.to = ''; convFill(); } });
+$('#uFrom').onchange = () => { uState.from = $('#uFrom').value; convRun(); };
+$('#uTo').onchange = () => { uState.to = $('#uTo').value; convRun(); };
+$('#uIn').addEventListener('input', convRun);
+$('#uSwap').onclick = () => { [uState.from, uState.to] = [uState.to, uState.from]; $('#uFrom').value = uState.from; $('#uTo').value = uState.to; convRun(); };
+$('#uAll').addEventListener('click', (e) => { const b = e.target.closest('[data-u]'); if (b) { uState.to = b.dataset.u; $('#uTo').value = uState.to; convRun(); } });
+$('#cMode').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cm]');
+  if (!b) return;
+  cMode = b.dataset.cm;
+  seg2($('#cMode'), cMode, 'cm');
+  $$('.cmode').forEach((m) => m.classList.toggle('on', m.dataset.cm === cMode));
+  if (cMode === 'conv') { convFill(); setTimeout(() => $('#uIn').select(), 50); }
+});
+calcRender();
+
+// ---------- Performance PC ----------
+const HN = 60, HIST = {};
+function hpush(k, v) { const a = (HIST[k] ||= []); a.push(v == null || !isFinite(v) ? null : v); if (a.length > HN) a.shift(); }
+function spark(id, data, max) {
+  const el = document.getElementById(id);
+  if (!el || !data?.length) return;
+  const h = el.viewBox.baseVal.height;
+  const off = HN - data.length;
+  let line = '', area = '', run = [];
+  const flush = () => {
+    if (run.length > 1) {
+      const d = run.map(([x, y], j) => `${j ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`).join('');
+      line += d;
+      area += `${d}L${run[run.length - 1][0].toFixed(2)} ${h}L${run[0][0].toFixed(2)} ${h}Z`;
+    }
+    run = [];
+  };
+  data.forEach((v, i) => {
+    if (v == null) return flush();
+    run.push([((i + off) / (HN - 1)) * 100, h - Math.min(1, Math.max(0, v / max)) * (h - 2) - 1]);
+  });
+  flush();
+  el.innerHTML = `<path class="area" d="${area}"/><path class="line" d="${line}"/>`;
+}
+const autoMax = (k, min) => Math.max(min, ...(HIST[k] || []).filter((x) => x != null)) * 1.15;
+const pct = (v) => (v == null ? '—' : Math.round(v) + ' %');
+const gb = (v, d = 1) => (v == null ? '—' : num(v, d) + ' Go');
+const upFmt = (s) => { const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60); return d ? `${d} j ${h} h` : h ? `${h} h ${String(m).padStart(2, '0')}` : `${m} min`; };
+function tempEm(el, t) {
+  el.textContent = t == null ? '' : Math.round(t) + '°';
+  el.className = t == null ? '' : t >= 85 ? 't-hot' : t >= 70 ? 't-warm' : 't-ok';
+}
+let perfBusy = false, pfTab = 'ov', pfSort = 'cpu', perfLast = null;
+async function refreshPerf() {
+  if (perfBusy) return;
+  perfBusy = true;
+  try {
+    const p = await invoke('perf_info');
+    perfLast = p;
+    hpush('cpu', p.cpu); hpush('gpu', p.gpu);
+    hpush('ram', p.ram_total ? (p.ram_used / p.ram_total) * 100 : null);
+    hpush('vram', p.vram_total ? (p.vram_used / p.vram_total) * 100 : null);
+    hpush('disk', p.disk_act); hpush('net', (p.net_down || 0) + (p.net_up || 0));
+    renderPerf(p);
+  } catch {} finally { perfBusy = false; }
+}
+function appRows(list, key) {
+  const max = Math.max(1e-9, ...list.map((a) => a[key]));
+  return list.map((a) => {
+    const val = key === 'cpu' ? `${num(a.cpu, 1)} %` : size(a.ram);
+    const w = key === 'cpu' ? Math.min(100, a.cpu) : (a.ram / max) * 100;
+    return `<div class="app-row"><span class="a-n"><b>${esc(a.name)}</b>${a.n > 1 ? `<small>×${a.n}</small>` : ''}</span><span class="a-v">${val}</span><span class="a-bar"><i style="width:${w.toFixed(1)}%"></i></span></div>`;
+  }).join('') || '<p class="hint">Mesure en cours…</p>';
+}
+function renderPerf(p) {
+  const vramPct = p.vram_total ? (p.vram_used / p.vram_total) * 100 : null;
+  $('#pfCpu').textContent = pct(p.cpu);
+  $('#pfCpuS').textContent = p.freq ? `${num(p.freq, 2)} GHz` : `${p.logical} threads`;
+  tempEm($('#pfCpuT'), p.cpu_temp);
+  $('#pfGpu').textContent = pct(p.gpu);
+  $('#pfGpuS').textContent = (p.gpu_name || 'GPU').replace(/^(NVIDIA|AMD|Intel\(R\))\s*/i, '').replace(/GeForce\s*/i, '');
+  tempEm($('#pfGpuT'), p.gpu_temp);
+  $('#pfRam').textContent = gb(p.ram_used);
+  $('#pfRamS').textContent = `sur ${num(p.ram_total, 0)} Go · ${pct((p.ram_used / p.ram_total) * 100)}`;
+  $('#pfVram').textContent = p.vram_total ? gb(p.vram_used) : '—';
+  $('#pfVramS').textContent = p.vram_total ? `sur ${num(p.vram_total, 0)} Go · ${pct(vramPct)}` : 'Non fournie';
+  $('#pfDisk').textContent = pct(p.disk_act);
+  $('#pfDiskS').textContent = `L ${rate(p.disk_r)} · É ${rate(p.disk_w)}`;
+  $('#pfNet').textContent = '↓ ' + rate(p.net_down);
+  $('#pfNetS').textContent = '↑ ' + rate(p.net_up);
+  if (pfTab === 'ov') {
+    spark('skCpu', HIST.cpu, 100); spark('skGpu', HIST.gpu, 100); spark('skRam', HIST.ram, 100);
+    spark('skVram', HIST.vram, 100); spark('skDisk', HIST.disk, 100); spark('skNet', HIST.net, autoMax('net', 50e3));
+    $('#pfTop3').innerHTML = appRows(p.top_cpu.slice(0, 3), 'cpu');
+  } else if (pfTab === 'cpu') {
+    $('#pfCpuName').textContent = p.cpu_name || 'Processeur';
+    $('#pfCpu2').textContent = pct(p.cpu);
+    spark('skCpu2', HIST.cpu, 100);
+    $('#pfFreq').textContent = p.freq ? `${num(p.freq, 2)} GHz` : p.base ? `${num(p.base, 2)} GHz` : '—';
+    $('#pfTemp').textContent = p.cpu_temp != null ? Math.round(p.cpu_temp) + ' °C' : 'Non fournie';
+    $('#pfLog').textContent = p.logical;
+    $('#pfCores').innerHTML = (p.cores || []).map((c, i) => `<span title="Cœur ${i} : ${Math.round(c)} %"><i style="height:${Math.max(3, c).toFixed(0)}%;opacity:${(0.45 + c / 180).toFixed(2)}"></i></span>`).join('');
+    $('#pfProcs').textContent = num(p.procs);
+    $('#pfThreads').textContent = num(p.threads);
+    $('#pfHandles').textContent = num(p.handles);
+    $('#pfUp').textContent = upFmt(p.uptime);
+    $('#pfCache').textContent = gb(p.ram_cache);
+    $('#pfCommit').textContent = p.commit != null ? `${num(p.commit, 1)} / ${num(p.commit_limit, 0)} Go` : '—';
+  } else {
+    $('#pfApps').innerHTML = appRows(pfSort === 'cpu' ? p.top_cpu : p.top_ram, pfSort);
+  }
+}
+$('#pfTabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-pf]');
+  if (!b) return;
+  pfTab = b.dataset.pf;
+  $$('#pfTabs button').forEach((x) => x.classList.toggle('on', x === b));
+  $$('.pfsub').forEach((s) => s.classList.toggle('on', s.dataset.pf === pfTab));
+  if (perfLast) renderPerf(perfLast);
+});
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-pf-go]'); if (b) $(`#pfTabs [data-pf="${b.dataset.pfGo}"]`).click(); });
+$('#pfSort').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-sort]');
+  if (!b) return;
+  pfSort = b.dataset.sort;
+  seg2($('#pfSort'), pfSort, 'sort');
+  if (perfLast) renderPerf(perfLast);
+});
+
+// ---------- périphériques & batteries ----------
+const DEV_ICO = {
+  mouse: '<svg viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v3"/></svg>',
+  keyboard: '<svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>',
+  headset: '<svg viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0116 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></svg>',
+  gamepad: '<svg viewBox="0 0 24 24"><path d="M6.5 8h11a4.5 4.5 0 014.4 5.5l-.7 3.2a2.5 2.5 0 01-4.3 1.1L15 16H9l-1.9 1.8a2.5 2.5 0 01-4.3-1.1l-.7-3.2A4.5 4.5 0 016.5 8z"/><path d="M8 11v3M6.5 12.5h3M15.5 12h.01M17.5 13.5h.01"/></svg>',
+  laptop: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>',
+  speaker: '<svg viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="3"/><circle cx="12" cy="14" r="3"/><path d="M12 7h.01"/></svg>',
+  pen: '<svg viewBox="0 0 24 24"><path d="M15 4l5 5L9 20H4v-5z"/></svg>',
+  other: '<svg viewBox="0 0 24 24"><path d="M7 7l10 10-5 5V2l5 5L7 17"/></svg>',
+};
+const BOLT = '<svg class="bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>';
+let devices = [], devAt = 0, devBusy = false;
+const lowWarned = new Set();
+const batCls = (d) => (!d.online || d.pct == null ? 'na' : d.full ? 'ok' : d.charging ? 'chg' : d.pct <= 15 ? 'low' : d.pct <= 30 ? 'mid' : 'ok');
+function batState(d) {
+  if (!d.online) return 'Éteint ou hors de portée';
+  if (d.pct == null) return 'Batterie non publiée par le fabricant';
+  if (d.full) return 'Chargé';
+  if (d.charging) return 'En charge';
+  if (d.pct <= 15) return 'Batterie faible';
+  return d.approx ? 'Estimation (tension)' : 'Sur batterie';
+}
+async function refreshDevices(force) {
+  if (devBusy || (!force && Date.now() - devAt < 10e3)) return;
+  devBusy = true;
+  if (force) $('#devRefresh').classList.add('spin');
+  try { devices = await invoke('devices_list', { force: !!force }); devAt = Date.now(); renderDevices(); }
+  catch {} finally { devBusy = false; $('#devRefresh').classList.remove('spin'); }
+}
+function renderDevices() {
+  $('#devList').innerHTML = devices.length ? devices.map((d) => {
+    const c = batCls(d);
+    const p = d.pct ?? 0;
+    const bat = d.pct != null && d.online
+      ? `<span class="bat"><span class="bat-body"><i style="width:${p}%"></i></span>${d.charging || d.full ? BOLT : ''}<b>${d.approx ? '≈' : ''}${p}<small>%</small></b></span>`
+      : `<span class="bat na"><span class="bat-body"><i></i></span><b>—</b></span>`;
+    return `<div class="dev ${c}"><span class="dev-ico">${DEV_ICO[d.kind] || DEV_ICO.other}</span>
+      <span class="dev-t"><b>${esc(d.name)}</b><small><span class="src">${esc(d.src)}</span>${batState(d)}</small></span>${bat}
+      ${d.pct != null && d.online ? `<span class="dev-bar"><i style="width:${p}%"></i></span>` : ''}</div>`;
+  }).join('') : `<div class="card empty"><b>Aucun périphérique sans fil détecté</b><small>Allume ton casque, ta manette ou ta souris Bluetooth puis actualise.</small></div>`;
+  const withBat = devices.filter((d) => d.pct != null && d.online);
+  $('#homeDev').classList.toggle('hidden', !withBat.length);
+  $('#homeDev').innerHTML = withBat.slice(0, 4).map((d) =>
+    `<span class="dchip ${batCls(d)}" title="${esc(d.name)} · ${batState(d)}">${DEV_ICO[d.kind] || DEV_ICO.other}<b>${d.pct}%</b>${d.charging ? BOLT : ''}</span>`).join('');
+  let low = false;
+  for (const d of withBat) {
+    const isLow = d.pct <= 15 && !d.charging;
+    if (isLow) {
+      low = true;
+      if (!lowWarned.has(d.id)) { lowWarned.add(d.id); toast(`Batterie faible : ${d.name} (${d.pct} %)`, true); }
+    } else if (d.charging || d.pct > 25) lowWarned.delete(d.id);
+  }
+  $('#devBadge').classList.toggle('hidden', !low);
+}
+$('#devRefresh').onclick = () => refreshDevices(true);
+
 const notes = $('#notes');
 notes.value = store.get('rez.notes', '');
 let notesT;
@@ -1072,6 +1393,9 @@ function applyLook() {
   setRange($('#pOpacity'), op);
   $('#pOpacity').style.setProperty('--p', ((op - 25) / 75) * 100 + '%');
   $('#pOpVal').textContent = op + '%';
+  const th = S.theme || 'violet';
+  document.documentElement.dataset.theme = th;
+  $$('#pTheme button').forEach((b) => b.classList.toggle('on', b.dataset.theme === th));
   const free = S.locked === false;
   document.body.classList.toggle('free', free);
   $('#btnLock').classList.toggle('hidden', !free);
@@ -1135,6 +1459,13 @@ $('#pSize').addEventListener('click', async (e) => {
   S.size = b.dataset.size;
   applyLook();
   render(mode);
+  await persist();
+});
+$('#pTheme').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-theme]');
+  if (!b || b.dataset.theme === S.theme) return;
+  S.theme = b.dataset.theme;
+  applyLook();
   await persist();
 });
 const opIn = $('#pOpacity');

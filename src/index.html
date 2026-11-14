@@ -29,6 +29,7 @@
       <span class="top-time"><b id="time">00:00</b><span id="date"></span></span>
       <span class="top-btns">
         <button class="icon-btn hidden" id="btnLock" title="Verrouiller à cet endroit"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></button>
+        <button class="icon-btn" id="btnSettings" title="Réglages"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><i class="badge hidden" id="setBadge"></i></button>
         <button class="icon-btn" id="btnCollapse" title="Réduire (Échap)"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
       </span>
     </header>
@@ -69,7 +70,7 @@
               <button class="ctl xs" data-media="next" title="Suivant"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8V4zM19 5v14"/></svg></button>
             </div>
           </div>
-          <div class="card sysw">
+          <div class="card sysw tap" data-go="perf" title="Ouvrir Performance PC">
             <div class="row between"><span class="wg-h">Système</span><small class="gpu-name" id="gpuName"></small></div>
             <div class="gauges">
               <div class="gauge" id="gCpu"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>CPU</span><em class="temp">—</em></div>
@@ -78,6 +79,7 @@
               <div class="gauge" id="gVram"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>VRAM</span><em>—</em></div>
             </div>
           </div>
+          <div class="devstrip hidden" id="homeDev" data-go="devices" title="Périphériques"></div>
           <div class="widgets">
             <button class="wg" id="wgFocus" data-sub-go="tools">
               <span class="wg-h">Focus</span>
@@ -155,13 +157,9 @@
           </div>
           <div class="apps">
             <button data-launch="screenshot"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3"/><circle cx="12" cy="12" r="3"/></svg>Capture</button>
-            <button data-launch="calc"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>Calcul</button>
-            <button data-launch="taskmgr"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Tâches</button>
-            <button data-launch="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Réglages</button>
-          </div>
-          <div class="card calc">
-            <input id="calcIn" placeholder="Calculatrice : 12*(3+4)" autocomplete="off">
-            <b id="calcOut">=</b>
+            <button data-go="calc"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 7h7M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01M8.5 15h.01M12 15h.01M15.5 15h.01M8.5 18h.01M12 18h3.5"/></svg>Calcul</button>
+            <button data-go="perf"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Perf</button>
+            <button data-go="devices"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M22 10.5v3M7 10v4M10.5 10v4"/></svg>Batteries</button>
           </div>
           <textarea class="notes" id="notes" placeholder="Notes rapides…"></textarea>
         </div>
@@ -325,49 +323,169 @@
         </form>
       </section>
 
-      <!-- PARAMÈTRES -->
-      <section class="view" data-view="settings">
-        <div class="seg" id="pSize">
-          <button data-size="compact">Compact</button>
-          <button data-size="large">Large</button>
-          <i></i>
+      <!-- PERFORMANCE PC -->
+      <section class="view" data-view="perf">
+        <div class="page-h"><button class="icon-btn back" data-back title="Retour"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><b>Performance PC</b><span class="chip live-chip"><i></i>Direct</span></div>
+        <div class="tabs" id="pfTabs">
+          <button data-pf="ov" class="on">Aperçu</button><button data-pf="cpu">Processeur</button><button data-pf="apps">Applications</button>
         </div>
-        <div class="card form">
-          <span class="wg-h">Apparence</span>
-          <label>Opacité du verre <b id="pOpVal" class="val">72%</b><input type="range" id="pOpacity" min="25" max="100" value="72"></label>
-          <span class="lbl">Position</span>
-          <div class="seg three" id="pDock">
-            <button data-dock="top">Haut</button><button data-dock="left">Gauche</button><button data-dock="right">Droite</button><i></i>
+        <div class="pfsub on" data-pf="ov">
+          <div class="tiles">
+            <div class="tile" style="--c:#22d3ee"><span class="t-l">CPU <em id="pfCpuT"></em></span><b id="pfCpu">—</b><small id="pfCpuS">—</small><svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" id="skCpu"></svg></div>
+            <div class="tile" style="--c:#a78bfa"><span class="t-l">GPU <em id="pfGpuT"></em></span><b id="pfGpu">—</b><small id="pfGpuS">—</small><svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" id="skGpu"></svg></div>
+            <div class="tile" style="--c:#34d399"><span class="t-l">Mémoire</span><b id="pfRam">—</b><small id="pfRamS">—</small><svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" id="skRam"></svg></div>
+            <div class="tile" style="--c:#f472b6"><span class="t-l">VRAM</span><b id="pfVram">—</b><small id="pfVramS">—</small><svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" id="skVram"></svg></div>
+            <div class="tile" style="--c:#fbbf24"><span class="t-l">Disque</span><b id="pfDisk">—</b><small id="pfDiskS">—</small><svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" id="skDisk"></svg></div>
+            <div class="tile" style="--c:#60a5fa"><span class="t-l">Réseau</span><b id="pfNet">—</b><small id="pfNetS">—</small><svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" id="skNet"></svg></div>
           </div>
-          <label class="tog"><input type="checkbox" id="pUnlock"><span></span>Déverrouiller l'emplacement</label>
-          <small class="hint" id="pUnlockHint">Glisse l'île où tu veux, sur n'importe quel écran.</small>
-          <label class="tog"><input type="checkbox" id="pPill"><span></span>Pilule toujours visible</label>
-          <label class="tog"><input type="checkbox" id="pBlur"><span></span>Réduire quand REZ perd le focus</label>
+          <div class="card mini-top">
+            <div class="row between"><span class="wg-h">Les plus gourmandes</span><button class="link" data-pf-go="apps">Tout voir</button></div>
+            <div class="apps-list" id="pfTop3"></div>
+          </div>
         </div>
-        <div class="card form">
-          <span class="wg-h">Raccourcis</span>
-          <label>Ouvrir / réduire<input id="pShortcut" class="sc" readonly placeholder="Clique puis tape"></label>
-          <label>Masquer / afficher l'île<input id="pHide" class="sc" readonly placeholder="Clique puis tape"></label>
+        <div class="pfsub" data-pf="cpu">
+          <div class="card big-chart" style="--c:#22d3ee">
+            <div class="row between"><span class="cpu-name" id="pfCpuName">Processeur</span><b class="big-val" id="pfCpu2">—</b></div>
+            <svg class="spark lg" viewBox="0 0 100 40" preserveAspectRatio="none" id="skCpu2"></svg>
+            <div class="kv">
+              <span><small>Fréquence</small><b id="pfFreq">—</b></span>
+              <span><small>Température</small><b id="pfTemp">—</b></span>
+              <span><small>Cœurs logiques</small><b id="pfLog">—</b></span>
+            </div>
+          </div>
+          <div class="card">
+            <span class="wg-h">Charge par cœur</span>
+            <div class="cores" id="pfCores"></div>
+          </div>
+          <div class="kv card">
+            <span><small>Processus</small><b id="pfProcs">—</b></span>
+            <span><small>Threads</small><b id="pfThreads">—</b></span>
+            <span><small>Handles</small><b id="pfHandles">—</b></span>
+            <span><small>Allumé depuis</small><b id="pfUp">—</b></span>
+            <span><small>Cache RAM</small><b id="pfCache">—</b></span>
+            <span><small>Mémoire validée</small><b id="pfCommit">—</b></span>
+          </div>
         </div>
-        <div class="card form">
-          <span class="wg-h">Services</span>
-          <label>Ville météo<input id="pCity" autocomplete="off"></label>
-          <label>Discord Client ID<input id="pDiscord" inputmode="numeric"></label>
-          <label>Discord Client Secret (vocal)<input id="pDSecret" type="password" autocomplete="off"></label>
-          <label class="tog"><input type="checkbox" id="pDAuto"><span></span>Présence auto selon le jeu lancé</label>
-          <label>Clé fortnite-api.com<input id="pFn" type="password" autocomplete="off"></label>
-          <label>Clé HenrikDev (Valorant)<input id="pHenrik" type="password" autocomplete="off"></label>
-          <label>Clé apexlegendsapi.com<input id="pApex" type="password" autocomplete="off"></label>
-          <label class="tog"><input type="checkbox" id="pAuto"><span></span>Lancer avec Windows</label>
-          <button class="btn primary" id="pSave">Enregistrer</button>
+        <div class="pfsub" data-pf="apps">
+          <div class="seg" id="pfSort"><button data-sort="cpu" class="on">Processeur</button><button data-sort="ram">Mémoire</button><i></i></div>
+          <div class="apps-list card" id="pfApps"></div>
+          <p class="hint">Applications regroupées par nom, comme dans le Gestionnaire des tâches. Données fournies par Windows, sans jamais ouvrir un processus (aucun risque anti-cheat).</p>
         </div>
-        <div class="row between foot">
-          <span class="ver">REZ <b id="pVer">-</b></span>
-          <span class="row">
-            <button class="btn sm" id="pCheck">MAJ</button>
-            <button class="btn sm danger" id="pQuit">Quitter</button>
-          </span>
+      </section>
+
+      <!-- PÉRIPHÉRIQUES -->
+      <section class="view" data-view="devices">
+        <div class="page-h"><button class="icon-btn back" data-back title="Retour"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><b>Périphériques</b><button class="icon-btn" id="devRefresh" title="Actualiser"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button></div>
+        <div id="devList" class="dev-list"></div>
+        <p class="hint">Batterie lue comme Windows et les logiciels des marques : Bluetooth, manettes Xbox, Logitech (G HUB, Lightspeed, Bolt), batterie du PC. Les autres récepteurs 2,4 GHz sont détectés, mais leur batterie reste dans un protocole fermé du fabricant.</p>
+      </section>
+
+      <!-- CALCULATRICE -->
+      <section class="view" data-view="calc">
+        <div class="page-h"><button class="icon-btn back" data-back title="Retour"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><b>Calculatrice</b>
+          <div class="seg mini" id="cMode"><button data-cm="calc" class="on">Calcul</button><button data-cm="conv">Unités</button><i></i></div>
         </div>
+        <div class="cmode on" data-cm="calc">
+          <div class="calc-screen">
+            <button class="icon-btn hist-btn" id="cHistBtn" title="Historique"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 103-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></button>
+            <div class="calc-expr" id="cExpr">&nbsp;</div>
+            <div class="calc-res" id="cRes">0</div>
+            <div class="calc-hist hidden" id="cHist"><div class="row between"><span class="wg-h">Historique</span><button class="link" id="cHistClr">Effacer</button></div><div id="cHistList"></div></div>
+          </div>
+          <div class="keys sci">
+            <button data-k="√">√</button><button data-k="^2">x²</button><button data-k="^">xʸ</button><button data-k="π">π</button><button data-k="back" title="Effacer un caractère"><svg viewBox="0 0 24 24"><path d="M21 5H9l-6 7 6 7h12zM16 9.5l-5 5M11 9.5l5 5"/></svg></button>
+          </div>
+          <div class="keys" id="cKeys">
+            <button data-k="clear" class="fn">AC</button><button data-k="(" class="fn">(</button><button data-k=")" class="fn">)</button><button data-k="÷" class="op">÷</button>
+            <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button><button data-k="×" class="op">×</button>
+            <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button><button data-k="−" class="op">−</button>
+            <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button><button data-k="+" class="op">+</button>
+            <button data-k="%" class="fn">%</button><button data-k="0">0</button><button data-k=",">,</button><button data-k="=" class="eq">=</button>
+          </div>
+        </div>
+        <div class="cmode" data-cm="conv">
+          <div class="chips" id="uCats"></div>
+          <div class="card conv">
+            <div class="conv-row"><input id="uIn" inputmode="decimal" autocomplete="off" value="1"><select id="uFrom"></select></div>
+            <button class="swap" id="uSwap" title="Inverser"><svg viewBox="0 0 24 24"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg></button>
+            <div class="conv-row"><b id="uOut">—</b><select id="uTo"></select></div>
+          </div>
+          <div class="card conv-all" id="uAll"></div>
+        </div>
+      </section>
+
+      <!-- RÉGLAGES (page dédiée) -->
+      <section class="view" data-view="settings">
+        <div class="page-h"><button class="icon-btn back" data-back title="Retour"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><b>Réglages</b><span class="ver">REZ <b id="pVer">-</b></span></div>
+
+        <div class="set-group">
+          <div class="set-t"><i style="--c:#a78bfa"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 100 18c1 0 1.6-.8 1.6-1.6 0-.5-.2-.8-.5-1.1-.3-.3-.5-.7-.5-1.1 0-.9.7-1.6 1.6-1.6H16a5 5 0 005-5c0-4-4-7.6-9-7.6z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></svg></i>Apparence</div>
+          <div class="card form">
+            <span class="lbl">Thème</span>
+            <div class="themes" id="pTheme">
+              <button data-theme="violet" style="--t1:#8b5cf6;--t2:#22d3ee" title="Violet"></button>
+              <button data-theme="cyan" style="--t1:#06b6d4;--t2:#a78bfa" title="Cyan"></button>
+              <button data-theme="rose" style="--t1:#ec4899;--t2:#38bdf8" title="Rose"></button>
+              <button data-theme="vert" style="--t1:#10b981;--t2:#a3e635" title="Vert"></button>
+              <button data-theme="orange" style="--t1:#f97316;--t2:#facc15" title="Orange"></button>
+              <button data-theme="mono" style="--t1:#71717a;--t2:#e4e4e7" title="Graphite"></button>
+            </div>
+            <span class="lbl">Taille</span>
+            <div class="seg" id="pSize">
+              <button data-size="compact">Compact</button>
+              <button data-size="large">Large</button>
+              <i></i>
+            </div>
+            <label>Opacité du verre <b id="pOpVal" class="val">72%</b><input type="range" id="pOpacity" min="25" max="100" value="72"></label>
+            <label class="tog"><input type="checkbox" id="pPill"><span></span>Pilule toujours visible</label>
+            <label class="tog"><input type="checkbox" id="pBlur"><span></span>Réduire quand REZ perd le focus</label>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <div class="set-t"><i style="--c:#22d3ee"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v4h8V4"/></svg></i>Position</div>
+          <div class="card form">
+            <div class="seg three" id="pDock">
+              <button data-dock="top">Haut</button><button data-dock="left">Gauche</button><button data-dock="right">Droite</button><i></i>
+            </div>
+            <label class="tog"><input type="checkbox" id="pUnlock"><span></span>Déverrouiller l'emplacement</label>
+            <small class="hint" id="pUnlockHint">Glisse l'île où tu veux, sur n'importe quel écran.</small>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <div class="set-t"><i style="--c:#fbbf24"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></i>Raccourcis</div>
+          <div class="card form">
+            <label>Ouvrir / réduire<input id="pShortcut" class="sc" readonly placeholder="Clique puis tape"></label>
+            <label>Masquer / afficher l'île<input id="pHide" class="sc" readonly placeholder="Clique puis tape"></label>
+            <small class="hint">Clique dans un champ, tape la combinaison (ex. Ctrl+B), puis Enregistrer.</small>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <div class="set-t"><i style="--c:#34d399"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg></i>Services</div>
+          <div class="card form">
+            <label>Ville météo<input id="pCity" autocomplete="off"></label>
+            <label>Discord Application ID<input id="pDiscord" inputmode="numeric"></label>
+            <label>Discord Client Secret (vocal)<input id="pDSecret" type="password" autocomplete="off"></label>
+            <label class="tog"><input type="checkbox" id="pDAuto"><span></span>Présence auto selon le jeu lancé</label>
+            <label>Clé fortnite-api.com<input id="pFn" type="password" autocomplete="off"></label>
+            <label>Clé HenrikDev (Valorant)<input id="pHenrik" type="password" autocomplete="off"></label>
+            <label>Clé apexlegendsapi.com<input id="pApex" type="password" autocomplete="off"></label>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <div class="set-t"><i style="--c:#f472b6"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></i>Système</div>
+          <div class="card form">
+            <label class="tog"><input type="checkbox" id="pAuto"><span></span>Lancer avec Windows</label>
+            <div class="row">
+              <button class="btn grow" id="pCheck">Rechercher une mise à jour</button>
+              <button class="btn danger" id="pQuit">Quitter</button>
+            </div>
+          </div>
+        </div>
+        <button class="btn primary save-bar" id="pSave">Enregistrer</button>
       </section>
     </main>
 
@@ -376,9 +494,10 @@
       <button data-go="media" title="Multimédia"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></button>
       <button data-go="discord" title="Discord"><svg viewBox="0 0 24 24"><path d="M8 7.5C9.3 7 10.6 6.8 12 6.8s2.7.2 4 .7M7.5 16.5c1.4.6 2.9.9 4.5.9s3.1-.3 4.5-.9"/><path d="M8.5 5.5L7 4C5 4.5 3.7 5.4 3 6.5 2 9 1.6 12.5 2 16c1.3 1.5 3 2.5 5 3l1.3-2M15.5 5.5L17 4c2 .5 3.3 1.4 4 2.5 1 2.5 1.4 6 1 9.5-1.3 1.5-3 2.5-5 3l-1.3-2"/><circle cx="9" cy="12.5" r="1.3"/><circle cx="15" cy="12.5" r="1.3"/></svg><i class="badge hidden" id="dBadge"></i></button>
       <button data-go="stats" title="Stats"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+      <button data-go="perf" title="Performance PC"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></button>
+      <button data-go="devices" title="Périphériques"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M22 10.5v3M7 10v4M10.5 10v4"/></svg><i class="badge hidden" id="devBadge"></i></button>
       <button data-go="ai" title="Chat IA"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg></button>
       <button data-go="files" title="Fichiers"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
-      <button data-go="settings" title="Paramètres"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><i class="badge hidden" id="setBadge"></i></button>
     </nav>
   </div>
   <div id="toast"></div>
