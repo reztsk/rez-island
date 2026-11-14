@@ -25,6 +25,8 @@ pub struct Settings {
     pub ai_model: String,
     pub autostart: bool,
     pub hide_on_blur: bool,
+    pub size: String,
+    pub pill_mode: bool,
 }
 
 impl Default for Settings {
@@ -41,6 +43,8 @@ impl Default for Settings {
             ai_model: "claude-opus-5-5".into(),
             autostart: false,
             hide_on_blur: false,
+            size: "compact".into(),
+            pill_mode: true,
         }
     }
 }

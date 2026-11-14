@@ -8,7 +8,7 @@ use std::process::Command;
 use std::time::Duration;
 
 // Remplacé automatiquement par scripts/setup-github.ps1
-pub const VERSION_URL: &str = "https://raw.githubusercontent.com/GITHUB_USER/REZ/main/version.json";
+pub const VERSION_URL: &str = "https://raw.githubusercontent.com/reztsk/rez-island/main/version.json";
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Remote {

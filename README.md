@@ -85,7 +85,10 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 ## Utilisation
 | Action | Comment |
 |---|---|
-| Ouvrir / fermer | `Ctrl+B` (modifiable dans Paramètres), clic sur l'icône tray, `Échap` pour masquer |
+| Île | Pilule collée en haut au centre (heure, musique en cours / météo). Clic → l'île s'ouvre |
+| Ouvrir / réduire | `Ctrl+B` (modifiable), clic sur la pilule ou l'icône tray, `Échap` pour réduire |
+| Taille | Paramètres → Compact / Large (transition animée) |
+| Pilule permanente | Paramètres → « Pilule toujours visible » (désactivé = REZ disparaît complètement une fois réduit) |
 | Quitter | clic droit tray → Quitter, ou Paramètres → Quitter |
 | Épingler un dossier | glisser-déposer sur REZ, ou formulaire Accès rapide |
 | Chat IA | clé API Anthropic dans Paramètres (modèle par défaut `claude-opus-5-5`) |

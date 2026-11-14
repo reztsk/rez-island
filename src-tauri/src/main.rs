@@ -11,11 +11,10 @@ use serde_json::Value;
 use settings::{Settings, MASK};
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -23,7 +22,6 @@ pub struct AppState {
     settings: Mutex<Settings>,
     discord: Mutex<Option<discord::Ipc>>,
     update: Mutex<Option<updater::Remote>>,
-    last_hide: AtomicU64,
 }
 
 pub fn err<E: std::fmt::Display>(e: E) -> String {
@@ -37,22 +35,22 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-// ---------- fenêtre ----------
-fn place(app: &AppHandle) {
-    let Some(w) = app.get_webview_window("main") else { return };
-    if let (Ok(Some(m)), Ok(sz)) = (w.primary_monitor(), w.outer_size()) {
+// ---------- fenêtre : île ancrée en haut au centre ----------
+/// Centre horizontalement, collée au bord haut de l'écran principal. `width` en px physiques.
+fn place(w: &tauri::WebviewWindow, width: u32) {
+    if let Ok(Some(m)) = w.primary_monitor() {
         let (ms, mp) = (m.size(), m.position());
-        let x = mp.x + (ms.width as i32 - sz.width as i32) / 2;
-        let y = mp.y + (6.0 * m.scale_factor()) as i32;
-        let _ = w.set_position(PhysicalPosition::new(x, y));
+        let x = mp.x + (ms.width as i32 - width as i32) / 2;
+        let _ = w.set_position(PhysicalPosition::new(x, mp.y));
     }
 }
 
 fn show(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        place(app);
+        if let Ok(sz) = w.outer_size() {
+            place(&w, sz.width);
+        }
         let _ = w.show();
-        let _ = w.set_focus();
         let _ = app.emit("rez://visible", true);
     }
 }
@@ -62,26 +60,22 @@ fn hide(app: &AppHandle) {
         if w.is_visible().unwrap_or(false) {
             let _ = w.hide();
             let _ = app.emit("rez://visible", false);
-            if let Some(s) = app.try_state::<AppState>() {
-                s.last_hide.store(now_ms(), Ordering::Relaxed);
-            }
         }
     }
+}
+
+/// Ouvre l'île (affiche la fenêtre si besoin) — le front gère l'animation.
+fn open(app: &AppHandle) {
+    show(app);
+    let _ = app.emit("rez://open", ());
 }
 
 fn toggle(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else { return };
     if w.is_visible().unwrap_or(false) {
-        hide(app);
+        let _ = app.emit("rez://toggle", ());
     } else {
-        // évite la réouverture immédiate quand le clic tray provoque un blur-hide
-        let recent = app
-            .try_state::<AppState>()
-            .map(|s| now_ms().saturating_sub(s.last_hide.load(Ordering::Relaxed)) < 300)
-            .unwrap_or(false);
-        if !recent {
-            show(app);
-        }
+        open(app);
     }
 }
 
@@ -134,6 +128,28 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut s: Settings) -> Res
 #[tauri::command]
 fn hide_window(app: AppHandle) {
     hide(&app);
+}
+
+/// Redimensionne la fenêtre à la taille de l'île (px logiques) et la garde collée en haut.
+#[tauri::command]
+fn island_fit(app: AppHandle, width: f64, height: f64, focus: bool) {
+    if let Some(w) = app.get_webview_window("main") {
+        let scale = w.scale_factor().unwrap_or(1.0);
+        let _ = w.set_size(LogicalSize::new(width, height));
+        place(&w, (width * scale).round() as u32);
+        if focus {
+            let _ = w.set_focus();
+        }
+    }
+}
+
+#[tauri::command]
+fn startup_state(app: AppHandle) -> Value {
+    let visible = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    serde_json::json!({ "visible": visible, "hidden": std::env::args().any(|a| a == "--hidden") })
 }
 
 #[tauri::command]
@@ -289,7 +305,7 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
 // ---------- main ----------
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| open(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -308,23 +324,25 @@ fn main() {
             if register_shortcut(&handle, &s.shortcut).is_err() {
                 let _ = register_shortcut(&handle, "Ctrl+B");
             }
+            let pill_mode = s.pill_mode;
             app.manage(AppState {
                 settings: Mutex::new(s),
                 discord: Mutex::new(None),
                 update: Mutex::new(None),
-                last_hide: AtomicU64::new(0),
             });
 
-            let open = MenuItem::with_id(app, "toggle", "Ouvrir / Masquer REZ", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
+            let m_open = MenuItem::with_id(app, "open", "Ouvrir REZ", true, None::<&str>)?;
+            let m_hide = MenuItem::with_id(app, "hide", "Masquer", true, None::<&str>)?;
+            let m_quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&m_open, &m_hide, &m_quit])?;
             TrayIconBuilder::with_id("rez")
                 .icon(app.default_window_icon().cloned().expect("icon"))
                 .tooltip("REZ")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, e| match e.id.as_ref() {
-                    "toggle" => toggle(app),
+                    "open" => open(app),
+                    "hide" => hide(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -340,7 +358,8 @@ fn main() {
                 })
                 .build(app)?;
 
-            if !std::env::args().any(|a| a == "--hidden") {
+            // pilule visible dès le démarrage ; ouverture auto sauf lancement masqué (autostart)
+            if pill_mode || !std::env::args().any(|a| a == "--hidden") {
                 show(&handle);
             }
             Ok(())
@@ -351,14 +370,7 @@ fn main() {
                 hide(w.app_handle());
             }
             WindowEvent::Focused(false) => {
-                let app = w.app_handle();
-                let blur = app
-                    .try_state::<AppState>()
-                    .map(|s| s.settings.lock().unwrap().hide_on_blur)
-                    .unwrap_or(false);
-                if blur {
-                    hide(app);
-                }
+                let _ = w.app_handle().emit("rez://blur", ());
             }
             _ => {}
         })
@@ -366,6 +378,8 @@ fn main() {
             get_settings,
             save_settings,
             hide_window,
+            island_fit,
+            startup_state,
             quit_app,
             app_version,
             open_path,

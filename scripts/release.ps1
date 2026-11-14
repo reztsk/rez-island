@@ -8,6 +8,12 @@ $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Version invalide (ex: 1.0.1)" }
 
+# outils (même si le PATH du terminal n'est pas encore rafraîchi)
+$env:Path = "$env:USERPROFILE\.cargo\bin;C:\Program Files\GitHub CLI;$env:Path"
+if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { throw "GitHub CLI absent : winget install GitHub.cli" }
+gh auth status *> $null
+if ($LASTEXITCODE -ne 0) { throw "GitHub CLI non connecté : gh auth login" }
+
 function Set-First($file, $pattern, $replacement) {
   $c = [IO.File]::ReadAllText($file)
   $c = ([regex]$pattern).Replace($c, $replacement, 1)
