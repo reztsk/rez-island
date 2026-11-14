@@ -1,6 +1,6 @@
 {
-    "version":  "1.4.1",
-    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.4.1/REZ.exe",
-    "sha256":  "5750f6c76c97bef32969898f1f4ab03a0550f9d874db9b17a62b5deebade2d76",
-    "notes":  "v1.4.1 : assistant de connexion Discord intégré à l\u0027île (colle l\u0027Application ID, REZ le vérifie et l\u0027enregistre), connexion Discord non bloquante avec réessais silencieux en arrière-plan (plus d\u0027erreur rouge « Discord ne répond pas » / « Invalid Client ID »), présence et vocal sur une seule connexion, vocal guidé pas à pas."
+    "version":  "1.5.0",
+    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.5.0/REZ.exe",
+    "sha256":  "4cc1fe90371e79efbed1f6e20017ce3237f8762a65116471f8c6bf532c7dc4eb",
+    "notes":  "Périphériques sans fil + batterie (charge en cours, alertes), menu Performance PC détaillé (courbes, cœurs, applis gourmandes), calculatrice intégrée avec historique et conversion d\u0027unités, page Réglages dédiée avec thèmes, interface affinée."
 }
