@@ -1,6 +1,6 @@
 [package]
 name = "rez"
-version = "1.5.0"
+version = "1.6.0"
 description = "REZ - Dynamic Island Windows 11"
 edition = "2021"
 
@@ -36,6 +36,7 @@ features = [
   "Win32_System_Com_StructuredStorage",
   "Win32_System_Variant",
   "Win32_System_Memory",
+  "Win32_System_DataExchange",
   "Win32_Security_Cryptography",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Registry",

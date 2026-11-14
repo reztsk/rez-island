@@ -11,8 +11,8 @@ const store = {
 
 // Tailles de l'île (px logiques) : pilule / ouverte
 const SIZES = {
-  compact: { pill: [210, 34], open: [360, 420] },
-  large:   { pill: [244, 40], open: [420, 488] },
+  compact: { pill: [210, 34], open: [372, 452] },
+  large:   { pill: [244, 40], open: [432, 520] },
 };
 const ANIM = 440;
 
@@ -88,6 +88,8 @@ function expand() { render('open', true); }
 function collapse() {
   if (mode !== 'open') return;
   lastCollapse = Date.now();
+  if (editing) setEditing(false);
+  setTimeout(maybeAutoInstall, 1500);
   render('pill').then((id) => {
     if (!S.pill_mode) setTimeout(() => { if (id === animId && mode === 'pill') invoke('hide_window'); }, ANIM + 40);
   });
@@ -127,30 +129,24 @@ $('#pillFace').addEventListener('pointerdown', dragStart);
 $('#topBar').addEventListener('pointerdown', dragStart);
 $('#pillFace').onclick = () => { if (dragged) { dragged = false; return; } expand(); };
 $('#btnCollapse').onclick = collapse;
-$('#btnLock').onclick = () => setLocked(true);
+$('#btnLock').onclick = () => setLocked(S.locked !== false ? false : true);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || document.activeElement?.classList.contains('sc')) return;
   if (view === 'calc' && cMode === 'calc' && (cExpr || cJust)) return; // Échap efface la calculatrice
+  if (editing) return setEditing(false);
   collapse();
 });
 
 // ---------- navigation ----------
-const PAGES = ['settings', 'calc'];   // pages dédiées (hors dock) : bouton retour
+const PAGES = ['settings', 'calc', 'weather', 'dl'];   // pages dédiées (hors dock) : bouton retour
 let backTo = 'home';
 function go(v) {
   if (v !== view) $('#views').scrollTop = 0;
+  if (editing && v !== 'home') setEditing(false);
   if (PAGES.includes(v) && !PAGES.includes(view)) backTo = view;
   view = v;
   $$('.view').forEach((el) => el.classList.toggle('active', el.dataset.view === v));
   $$('.dock button').forEach((b) => b.classList.toggle('active', b.dataset.go === v));
-  onView();
-  schedule();
-}
-function goSub(s) {
-  if (s !== sub) $('#views').scrollTop = 0;
-  sub = s;
-  $$('#homeTabs button').forEach((b) => b.classList.toggle('on', b.dataset.sub === s));
-  $$('.sub').forEach((el) => el.classList.toggle('on', el.dataset.sub === s));
   onView();
   schedule();
 }
@@ -160,15 +156,13 @@ document.addEventListener('click', (e) => {
     if (b.dataset.go === 'stats' && live.game && GAMES[live.game.id]) selectGame(live.game.id);
     go(b.dataset.go);
   }
-  const sb = e.target.closest('[data-sub-go]');
-  if (sb) goSub(sb.dataset.subGo);
+  if (b?.hasAttribute('data-mix')) $('#mTabs [data-msub="mix"]').click();
   if (e.target.closest('[data-back]')) go(PAGES.includes(view) ? backTo : 'home');
 });
 $('#btnSettings').onclick = () => go(view === 'settings' ? backTo : 'settings');
-$('#homeTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-sub]'); if (b) goSub(b.dataset.sub); });
 function onView() {
   if (mode !== 'open') return;
-  if (view === 'home' && Date.now() - lastWeather > 10 * 60e3) loadWeather();
+  if ((view === 'home' || view === 'weather') && Date.now() - lastWeather > 10 * 60e3) loadWeather();
   if (view === 'stats') loadStats(false);
   if (view === 'ai') setTimeout(() => $('#aIn').focus(), 60);
   $('#btnSettings').classList.toggle('on', view === 'settings');
@@ -183,17 +177,19 @@ function schedule() {
   clockTimer = mediaTimer = sysTimer = mixTimer = perfTimer = devTimer = null;
   if (!winVisible) return;
   tick();
-  clockTimer = setInterval(tick, mode === 'open' || focusLeft() > 0 ? 1000 : 5000);
-  const fast = mode === 'open' && ((view === 'home' && sub === 'ov') || view === 'media');
+  clockTimer = setInterval(tick, mode === 'open' || focusLeft() > 0 || tm.end ? 1000 : 5000);
+  const fast = mode === 'open' && ((view === 'home' && wOn('media')) || view === 'media');
   refreshMedia();
   mediaTimer = setInterval(refreshMedia, fast ? 2000 : 5000);
-  if (mode === 'open' && view === 'home' && sub === 'ov') { refreshSys(); sysTimer = setInterval(refreshSys, 2000); }
+  if (mode === 'open' && view === 'home' && wOn('sys')) { refreshSys(); sysTimer = setInterval(refreshSys, 2000); }
   if (mode === 'open' && view === 'media' && msub === 'mix') { refreshMix(); mixTimer = setInterval(refreshMix, 900); }
   if (mode === 'open' && view === 'perf') { refreshPerf(); perfTimer = setInterval(refreshPerf, 1000); }
   // batteries : la liste est en cache côté Rust (20 s), la détection reste très légère
   const devView = mode === 'open' && view === 'devices';
-  refreshDevices(devView);
-  devTimer = setInterval(() => refreshDevices(false), devView ? 15e3 : 60e3);
+  if (devView || !devOff()) {
+    refreshDevices(devView);
+    devTimer = setInterval(() => refreshDevices(false), devView ? 15e3 : 60e3);
+  }
 }
 setInterval(() => { if (winVisible && Date.now() - lastWeather > 15 * 60e3) loadWeather(); }, 60e3);
 
@@ -207,9 +203,11 @@ function tick() {
   $('#bigTime').textContent = hm;
   $('#sec').textContent = String(d.getSeconds()).padStart(2, '0');
   $('#date').textContent = fmtDate.format(d).replace(/\./g, '');
+  $('#wDate').textContent = fmtDate.format(d).replace(/\./g, '');
+  renderTimer();
   renderFocus();
   renderProgress();
-  if (focusLeft() > 0 || mode === 'pill') renderPill();
+  if (focusLeft() > 0 || tm.end || mode === 'pill') renderPill();
 }
 
 // ---------- météo ----------
@@ -338,14 +336,14 @@ function renderPill() {
   const ch = voice?.channel;
   const dl = topDownload();
   const dlPct = dl && dl.pct != null && dl.state !== 'En pause';
-  const what = left > 0 ? 'focus' : ch ? 'voice' : dlPct ? 'dl' : playing ? 'media' : live.game ? 'game' : dl ? 'dl' : 'wx';
+  const what = left > 0 ? 'focus' : tm.end ? 'timer' : ch ? 'voice' : dlPct ? 'dl' : playing ? 'media' : live.game ? 'game' : dl ? 'dl' : 'wx';
   const info = $('#pillInfo');
   const dot = $('#pillDot');
-  dot.classList.toggle('focus', what === 'focus');
+  dot.classList.toggle('focus', what === 'focus' || what === 'timer');
   dot.classList.toggle('voice', what === 'voice');
   dot.classList.toggle('dl', what === 'dl');
   dot.classList.toggle('game', what === 'game' || (what === 'media' && !!live.game));
-  info.classList.toggle('focus', what === 'focus');
+  info.classList.toggle('focus', what === 'focus' || what === 'timer');
   $('#pillArt').classList.toggle('hidden', !(what === 'media' && $('#pillArt').dataset.ok === '1'));
   $('#pillBars').classList.toggle('hidden', what !== 'media');
   // avatars du salon (ceux qui parlent d'abord)
@@ -361,6 +359,7 @@ function renderPill() {
   pp.classList.toggle('hidden', !(dl && dl.pct != null));
   if (dl && dl.pct != null) pp.firstElementChild.style.width = dl.pct.toFixed(1) + '%';
   if (what === 'focus') info.textContent = `Focus ${mmss(left)}`;
+  else if (what === 'timer') info.textContent = `⏱ ${mmss(Math.ceil(tmLeft()))}`;
   else if (what === 'voice') {
     const sp = (voice.members || []).filter((m) => m.speaking && !m.me).map((m) => m.name);
     info.textContent = sp.length ? sp.join(', ') : ch.name;
@@ -381,6 +380,7 @@ function renderProgress() {
   const pos = has ? curPos() : 0;
   const pct = has ? (pos / m.duration) * 100 : 0;
   $('#npProg').style.width = pct + '%';
+  $('#npTime').textContent = has ? `${mmss(pos)} / ${mmss(m.duration)}` : '';
   if (!seekDrag) {
     setRange($('#mSeek'), has ? Math.round(pct * 10) / 10 : 0, 10);
     $('#mPos').textContent = mmss(pos);
@@ -478,7 +478,6 @@ function renderDownloads() {
   const d = live.downloads || [];
   const top = topDownload();
   $('#netVal').textContent = rate(live.net || 0);
-  $('#dlDot').classList.toggle('hidden', !d.length);
   $('#wgDl').classList.toggle('on', !!d.length);
   $('#wgDlVal').textContent = top ? (top.pct != null ? `${Math.floor(top.pct)}%` : rate(top.speed)) : 'Aucun';
   $('#wgDlSub').textContent = top ? `${top.name}` : `↓ ${rate(live.net || 0)}`;
@@ -586,6 +585,7 @@ function onLive(l) {
   renderFocus();
   renderPill();
   if (!!before !== !!l.focus_until) schedule();
+  if (pendingUpd) maybeAutoInstall();
 }
 function setPP(img, ph, user) {
   const url = safeUrl(user?.avatar);
@@ -627,37 +627,23 @@ let focusMin = store.get('rez.focusMin', 25);
 function renderFocus() {
   const left = focusLeft();
   const on = left > 0;
-  const total = Math.max(store.get('rez.focusTotal', 0), left, 1);
-  const txt = on ? mmss(left) : `${focusMin}:00`;
-  $('#focusVal').textContent = $('#wgFocusVal').textContent = txt;
-  $('#wgFocusTxt').textContent = on ? 'Notifs Discord coupées' : 'Prêt · ' + focusMin + ' min';
-  $('#wgFocus').classList.toggle('on', on);
-  $('#focusCard').classList.toggle('on', on);
-  $('#focusState').textContent = on ? 'Actif' : 'Inactif';
-  $('#focusState').classList.toggle('on', on);
-  $('#focusArc').style.strokeDashoffset = on ? 106.8 * (1 - left / total) : 106.8;
-  const b = $('#focusBtn');
-  b.textContent = on ? 'Arrêter' : 'Lancer';
-  b.classList.toggle('primary', !on);
-  b.classList.toggle('stop', on);
+  $('#fcVal').textContent = on ? mmss(left) : `${focusMin}:00`;
+  $('#fcTxt').textContent = on ? 'Notifs Discord coupées' : 'Coupe les notifs Discord';
+  wEl('focus').classList.toggle('on', on);
+  $('#fcBtn svg').innerHTML = on ? '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>' : ICON_PLAY;
 }
-$('#focusPresets').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-min]');
-  if (!b) return;
-  focusMin = +b.dataset.min;
-  $('#focusMin').value = focusMin;
-  $$('#focusPresets button').forEach((x) => x.classList.toggle('on', x === b));
+function fcAdj(d) {
+  if (focusLeft() > 0) return;
+  focusMin = Math.min(600, Math.max(5, focusMin + d * ((d > 0 ? focusMin >= 30 : focusMin > 30) ? 15 : 5)));
   store.set('rez.focusMin', focusMin);
   renderFocus();
-});
-$('#focusMin').addEventListener('input', () => {
-  const v = Math.round(+$('#focusMin').value);
-  if (v >= 1 && v <= 600) { focusMin = v; store.set('rez.focusMin', v); $$('#focusPresets button').forEach((x) => x.classList.toggle('on', +x.dataset.min === v)); renderFocus(); }
-});
-$('#focusBtn').onclick = async () => {
-  const b = $('#focusBtn'); b.disabled = true;
+}
+$('#fcMinus').onclick = () => fcAdj(-1);
+$('#fcPlus').onclick = () => fcAdj(1);
+$('#fcBtn').onclick = async () => {
+  const b = $('#fcBtn'); b.disabled = true;
   try {
-    if (focusLeft() > 0) { await call('focus_stop'); toast('Mode Focus terminé'); }
+    if (focusLeft() > 0) { await call('focus_stop'); live.focus_until = 0; toast('Mode Focus terminé'); }
     else {
       const until = await call('focus_start', { minutes: focusMin });
       store.set('rez.focusTotal', focusMin * 60);
@@ -1315,9 +1301,9 @@ function renderDevices() {
       ${d.pct != null && d.online ? `<span class="dev-bar"><i style="width:${p}%"></i></span>` : ''}</div>`;
   }).join('') : `<div class="card empty"><b>Aucun périphérique sans fil détecté</b><small>Allume ton casque, ta manette ou ta souris Bluetooth puis actualise.</small></div>`;
   const withBat = devices.filter((d) => d.pct != null && d.online);
-  $('#homeDev').classList.toggle('hidden', !withBat.length);
-  $('#homeDev').innerHTML = withBat.slice(0, 4).map((d) =>
-    `<span class="dchip ${batCls(d)}" title="${esc(d.name)} · ${batState(d)}">${DEV_ICO[d.kind] || DEV_ICO.other}<b>${d.pct}%</b>${d.charging ? BOLT : ''}</span>`).join('');
+  $('#homeDev').innerHTML = withBat.length ? withBat.slice(0, 5).map((d) =>
+    `<span class="dchip ${batCls(d)}" title="${esc(d.name)} · ${batState(d)}">${DEV_ICO[d.kind] || DEV_ICO.other}<b>${d.pct}%</b>${d.charging ? BOLT : ''}</span>`).join('')
+    : `<span class="w-empty">${devices.length ? devices.length + ' périphérique(s) · batterie non publiée' : 'Aucune batterie détectée'}</span>`;
   let low = false;
   for (const d of withBat) {
     const isLow = d.pct <= 15 && !d.charging;
@@ -1383,6 +1369,8 @@ listen('tauri://drag-drop', async (e) => {
 });
 
 // ---------- paramètres ----------
+const LOCK_SHUT = '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/>';
+const LOCK_OPEN = '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 017.6-1.8"/>';
 function applyLook() {
   const large = sizeKey() === 'large';
   document.documentElement.classList.toggle('large', large);
@@ -1398,7 +1386,9 @@ function applyLook() {
   $$('#pTheme button').forEach((b) => b.classList.toggle('on', b.dataset.theme === th));
   const free = S.locked === false;
   document.body.classList.toggle('free', free);
-  $('#btnLock').classList.toggle('hidden', !free);
+  $('#btnLock').classList.toggle('on', free);
+  $('#btnLock').title = free ? 'Verrouiller l\'île à cet endroit' : 'Déverrouiller pour déplacer l\'île';
+  $('#btnLock svg').innerHTML = free ? LOCK_OPEN : LOCK_SHUT;
   $('#pUnlock').checked = free;
   renderDock();
 }
@@ -1436,6 +1426,10 @@ function fillSettings() {
   $('#pPill').checked = S.pill_mode;
   $('#dDetails').value = S.discord_details;
   $('#dState').value = S.discord_state;
+  $('#pAutoUpd').checked = S.auto_update !== false;
+  renderCoffee();
+  applyWidgets();
+  applyModules();
   applyLook();
   renderPins();
   renderAi();
@@ -1517,15 +1511,18 @@ $('#pQuit').onclick = () => invoke('quit_app');
 async function checkUpdate(manual = false) {
   try {
     const r = await invoke('check_update');
+    $('#pUpdState').textContent = r.available ? `v${r.latest} disponible` : 'À jour · ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
     if (r.available) {
       $('#updVer').textContent = 'v' + r.latest;
       $('#updNotes').textContent = r.notes || 'Nouvelle version disponible';
       $('#updCard').classList.remove('hidden');
       $('#setBadge').classList.remove('hidden');
       $('#pillDot').classList.add('upd');
-      if (manual) { toast(`v${r.latest} disponible`); go('home'); goSub('ov'); }
+      pendingUpd = r;
+      if (manual) { toast(`v${r.latest} disponible`); go('home'); }
+      maybeAutoInstall();
     } else if (manual) toast(`REZ est à jour (v${r.current})`);
-  } catch (e) { if (manual) toast(String(e), true); }
+  } catch (e) { $('#pUpdState').textContent = 'Vérification impossible'; if (manual) toast(String(e), true); }
 }
 $('#pCheck').onclick = () => checkUpdate(true);
 $('#updBtn').onclick = async () => {
@@ -1535,12 +1532,291 @@ $('#updBtn').onclick = async () => {
   catch (e) { toast(String(e), true); b.disabled = false; b.textContent = 'Réessayer'; }
 };
 
+// ---------- accueil : grille de widgets modulable ----------
+const WIDGETS = {
+  timer: 'Minuteur', media: 'Lecteur', clip: 'Presse-papiers', notes: 'Notes', coffee: 'Anti-veille',
+  weather: 'Météo', clock: 'Horloge', focus: 'Mode Focus', sys: 'Système', dev: 'Batteries',
+  dl: 'Téléchargements', discord: 'Discord', game: 'En jeu', pins: 'Dossiers épinglés',
+  q_calc: 'Calculatrice', q_shot: 'Capture', q_perf: 'Performance PC', q_dev: 'Périphériques', q_files: 'Fichiers',
+  q_ai: 'Chat IA', q_mix: 'Mélangeur audio', q_stats: 'Stats de jeu', q_set: 'Réglages',
+};
+const W_DEFAULT = ['timer', 'media', 'clip', 'q_calc', 'q_shot', 'q_perf', 'q_set', 'notes', 'coffee', 'weather', 'focus', 'sys', 'dev', 'dl', 'discord', 'game'];
+const W_SIZE = { s11: '1×1', s21: '2×1', s22: '2×2', s41: '4×1' };
+const wEl = (id) => document.querySelector(`.w[data-w="${id}"]`);
+const wOrder = () => (Array.isArray(S.widgets) ? S.widgets : W_DEFAULT).filter((id, i, a) => WIDGETS[id] && wEl(id) && a.indexOf(id) === i);
+const wOn = (id) => wOrder().includes(id);
+const wGrid = $('#wgrid');
+for (const el of $$('.w')) {
+  const x = document.createElement('button');
+  x.className = 'w-x'; x.title = 'Retirer'; x.textContent = '×';
+  el.appendChild(x);
+}
+function applyWidgets() {
+  const on = wOrder();
+  for (const id of on) wGrid.appendChild(wEl(id));
+  for (const el of [...wGrid.children]) if (!on.includes(el.dataset.w)) $('#wpool').appendChild(el);
+  $('#wAddList').innerHTML = Object.keys(WIDGETS).filter((id) => !on.includes(id))
+    .map((id) => `<button data-add="${id}">+ ${esc(WIDGETS[id])}</button>`).join('') || '<small class="hint">Tous les widgets sont affichés.</small>';
+  const rows = [...on, ...Object.keys(WIDGETS).filter((id) => !on.includes(id))];
+  $('#pWidgets').innerHTML = rows.map((id) => {
+    const act = on.includes(id);
+    const sz = W_SIZE[[...wEl(id).classList].find((c) => W_SIZE[c])] || '';
+    return `<div class="wrow${act ? '' : ' off'}" data-wid="${id}"><span class="wr-n">${esc(WIDGETS[id])}</span><small>${sz}</small>
+      <button class="icon-btn" data-mv="-1" title="Monter"${act ? '' : ' disabled'}><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+      <button class="icon-btn" data-mv="1" title="Descendre"${act ? '' : ' disabled'}><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      <label class="tog"><input type="checkbox" data-wtog="${id}"${act ? ' checked' : ''}><span></span></label></div>`;
+  }).join('');
+  schedule();
+}
+async function saveWidgets(list) {
+  S.widgets = list;
+  applyWidgets();
+  await persist({ widgets: list });
+}
+let editing = false;
+function setEditing(on) {
+  editing = on;
+  document.body.classList.toggle('editing', on);
+  $('#btnEditDone').classList.toggle('hidden', !on);
+  $('#btnEdit').classList.toggle('hidden', on);
+  $('#wAdd').classList.toggle('hidden', !on);
+  $('#wHint').textContent = on ? 'Glisse pour déplacer · × pour retirer' : '';
+  if (on && view !== 'home') go('home');
+}
+$('#btnEdit').onclick = () => setEditing(true);
+$('#btnEditDone').onclick = () => { setEditing(false); toast('Disposition enregistrée'); };
+$('#pWEdit').onclick = () => { setEditing(true); };
+$('#pWReset').onclick = () => saveWidgets([...W_DEFAULT]).then(() => toast('Disposition par défaut'));
+$('#wAddList').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-add]');
+  if (b) saveWidgets([...wOrder(), b.dataset.add]);
+});
+$('#pWidgets').addEventListener('change', (e) => {
+  const t = e.target.closest('[data-wtog]');
+  if (!t) return;
+  const id = t.dataset.wtog;
+  saveWidgets(t.checked ? [...wOrder(), id] : wOrder().filter((x) => x !== id));
+});
+$('#pWidgets').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mv]');
+  if (!b) return;
+  const id = b.closest('[data-wid]').dataset.wid;
+  const l = wOrder();
+  const i = l.indexOf(id), j = i + +b.dataset.mv;
+  if (i < 0 || j < 0 || j >= l.length) return;
+  [l[i], l[j]] = [l[j], l[i]];
+  saveWidgets(l);
+});
+// en mode édition, aucun clic n'ouvre de page
+wGrid.addEventListener('click', (e) => { if (editing) { e.stopPropagation(); e.preventDefault(); } }, true);
+wGrid.addEventListener('pointerover', (e) => {
+  if (editing) return;
+  const w = e.target.closest('.w');
+  $('#wHint').textContent = w ? WIDGETS[w.dataset.w] || '' : '';
+});
+wGrid.addEventListener('pointerleave', () => { if (!editing) $('#wHint').textContent = ''; });
+
+// glisser-déposer des tuiles (pointeur) + animation FLIP des voisines
+let wd = null;
+function flip(change) {
+  const els = [...wGrid.children].filter((x) => x !== wd?.el);
+  const before = new Map(els.map((x) => [x, x.getBoundingClientRect()]));
+  change();
+  for (const x of els) {
+    const a = before.get(x), b = x.getBoundingClientRect();
+    const dx = a.left - b.left, dy = a.top - b.top;
+    if (!dx && !dy) continue;
+    x.style.transition = 'none';
+    x.style.translate = `${dx}px ${dy}px`;
+    x.getBoundingClientRect();
+    x.style.transition = '';
+    x.style.translate = '';
+  }
+}
+function wdPlace(cx, cy) {
+  const el = wd.el;
+  el.style.translate = '';
+  const r = el.getBoundingClientRect();
+  el.style.translate = `${cx - wd.ox - r.left}px ${cy - wd.oy - r.top}px`;
+}
+wGrid.addEventListener('pointerdown', (e) => {
+  if (!editing || e.button !== 0) return;
+  const x = e.target.closest('.w-x');
+  if (x) { e.preventDefault(); saveWidgets(wOrder().filter((id) => id !== x.closest('.w').dataset.w)); return; }
+  const el = e.target.closest('.w');
+  if (!el) return;
+  e.preventDefault();
+  const r = el.getBoundingClientRect();
+  wd = { el, ox: e.clientX - r.left, oy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false, cx: e.clientX, cy: e.clientY };
+  el.setPointerCapture(e.pointerId);
+});
+document.addEventListener('pointermove', (e) => {
+  if (!wd) return;
+  wd.cx = e.clientX; wd.cy = e.clientY;
+  if (!wd.moved) {
+    if (Math.hypot(e.clientX - wd.sx, e.clientY - wd.sy) < 5) return;
+    wd.moved = true;
+    wd.el.classList.add('drag');
+    wGrid.classList.add('dragging');
+    requestAnimationFrame(wdScroll);
+  }
+  const t = document.elementFromPoint(e.clientX, e.clientY)?.closest('#wgrid > .w');
+  if (t && t !== wd.el) {
+    const items = [...wGrid.children];
+    const from = items.indexOf(wd.el), to = items.indexOf(t);
+    flip(() => wGrid.insertBefore(wd.el, from < to ? t.nextSibling : t));
+  }
+  wdPlace(e.clientX, e.clientY);
+});
+// défilement automatique quand on approche du haut / bas
+function wdScroll() {
+  if (!wd?.moved) return;
+  const m = $('#views'), r = m.getBoundingClientRect();
+  const d = wd.cy < r.top + 36 ? -7 : wd.cy > r.bottom - 36 ? 7 : 0;
+  if (d) { m.scrollTop += d; wdPlace(wd.cx, wd.cy); }
+  requestAnimationFrame(wdScroll);
+}
+function wdEnd() {
+  if (!wd) return;
+  const { el, moved } = wd;
+  wd = null;
+  if (!moved) return;
+  el.classList.remove('drag');
+  wGrid.classList.remove('dragging');
+  el.style.translate = '';
+  const list = [...wGrid.children].map((x) => x.dataset.w);
+  if (list.join() !== wOrder().join()) { S.widgets = list; persist({ widgets: list }); }
+}
+document.addEventListener('pointerup', wdEnd);
+document.addEventListener('pointercancel', wdEnd);
+
+// ---------- modules du dock ----------
+const MODULES = { media: 'Multimédia', discord: 'Discord', stats: 'Stats de jeu', perf: 'Performance PC', devices: 'Batteries', ai: 'Chat IA', files: 'Fichiers' };
+const modOff = (m) => (S.modules_off || []).includes(m);
+const devOff = () => modOff('devices') && !wOn('dev');
+function applyModules() {
+  for (const b of $$('.dock [data-go]')) b.classList.toggle('hidden', modOff(b.dataset.go));
+  $('#pModules').innerHTML = Object.entries(MODULES).map(([k, n]) =>
+    `<label class="tog"><input type="checkbox" data-mod="${k}"${modOff(k) ? '' : ' checked'}><span></span>${n}</label>`).join('');
+  if (modOff(view)) go('home');
+}
+$('#pModules').addEventListener('change', (e) => {
+  const t = e.target.closest('[data-mod]');
+  if (!t) return;
+  const off = new Set(S.modules_off || []);
+  t.checked ? off.delete(t.dataset.mod) : off.add(t.dataset.mod);
+  persist({ modules_off: [...off] }).then(() => schedule());
+});
+
+// ---------- minuteur ----------
+let tm = store.get('rez.timer', null);
+if (!tm || !(tm.total > 0)) tm = { total: 1500, left: 1500, end: 0 };
+let tmT = null, audio = null;
+const tmLeft = () => (tm.end ? Math.max(0, (tm.end - Date.now()) / 1000) : tm.left);
+function renderTimer() {
+  const left = tmLeft();
+  $('#tmVal').textContent = mmss(Math.ceil(left));
+  $('#tmArc').style.strokeDashoffset = 106.8 * (1 - Math.min(1, left / Math.max(1, tm.total)));
+  $('#tmPlay svg').innerHTML = tm.end ? ICON_PAUSE : ICON_PLAY;
+  wEl('timer').classList.toggle('run', !!tm.end);
+}
+function tmSave() { store.set('rez.timer', tm); clearTimeout(tmT); if (tm.end) tmT = setTimeout(tmDone, Math.max(0, tm.end - Date.now()) + 30); renderTimer(); renderPill(); }
+function chime() {
+  try {
+    audio ||= new AudioContext();
+    audio.resume();
+    const t0 = audio.currentTime;
+    [880, 1175, 1568, 1175, 1568].forEach((f, i) => {
+      const o = audio.createOscillator(), g = audio.createGain();
+      const t = t0 + i * 0.16;
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+      o.connect(g).connect(audio.destination);
+      o.start(t); o.stop(t + 0.5);
+    });
+  } catch {}
+}
+function tmDone() {
+  if (!tm.end) return;
+  if (tm.end - Date.now() > 300) return tmSave();
+  tm.end = 0; tm.left = tm.total;
+  tmSave(); schedule();
+  chime();
+  toast('⏱ Minuteur terminé');
+  if (mode !== 'open') expand();
+}
+$('#tmPlay').onclick = () => {
+  try { audio ||= new AudioContext(); } catch {}
+  if (tm.end) { tm.left = tmLeft(); tm.end = 0; }
+  else { if (tm.left < 1) tm.left = tm.total; tm.end = Date.now() + tm.left * 1000; }
+  tmSave(); schedule();
+};
+function tmAdj(sign) {
+  const cur = tmLeft();
+  const step = (sign > 0 ? cur >= 600 : cur > 600) ? 300 : 60;
+  if (tm.end) {
+    tm.end = Math.max(Date.now() + 5000, tm.end + sign * step * 1000);
+    tm.total = Math.max(tm.total, tmLeft());
+  } else {
+    tm.left = tm.total = Math.min(99 * 60, Math.max(60, Math.round(cur / 60) * 60 + sign * step));
+  }
+  tmSave();
+}
+$('#tmMinus').onclick = () => tmAdj(-1);
+$('#tmPlus').onclick = () => tmAdj(1);
+$('#tmReset').onclick = () => { tm.end = 0; tm.left = tm.total; tmSave(); schedule(); };
+
+// ---------- presse-papiers (historique en mémoire, côté Rust) ----------
+let clips = [];
+function renderClips() {
+  $('#clipList').innerHTML = clips.length ? clips.slice(0, 15).map((c, i) =>
+    `<div class="clip" data-ci="${i}" title="${esc(c.text.slice(0, 400))}"><span>${esc(c.text.replace(/\s+/g, ' ').trim().slice(0, 140))}</span><i data-cx="${i}" title="Supprimer">×</i></div>`).join('')
+    : '<p class="w-empty">Copie quelque chose</p>';
+}
+listen('rez://clip', (e) => { clips = e.payload || []; renderClips(); });
+$('#clipList').addEventListener('click', async (e) => {
+  const x = e.target.closest('[data-cx]');
+  if (x) { e.stopPropagation(); const i = +x.dataset.cx; await invoke('clip_clear', { index: i }).catch(() => {}); clips.splice(i, 1); renderClips(); return; }
+  const c = e.target.closest('[data-ci]');
+  if (!c) return;
+  try { await call('clip_copy', { text: clips[+c.dataset.ci].text }); c.classList.add('ok'); toast('Copié dans le presse-papiers'); } catch {}
+});
+$('#clipClr').onclick = async () => { await invoke('clip_clear', { index: null }).catch(() => {}); clips = []; renderClips(); };
+
+// ---------- anti-veille ----------
+function renderCoffee() {
+  const on = !!S.awake;
+  $('#cfOn').checked = on;
+  $('#cfTxt').textContent = on ? 'Toujours allumé' : 'Désactivé';
+  wEl('coffee').classList.toggle('on', on);
+}
+$('#cfOn').onchange = async () => {
+  S.awake = $('#cfOn').checked;
+  renderCoffee();
+  await invoke('keep_awake', { on: S.awake }).catch(() => {});
+  toast(S.awake ? 'Anti-veille : l\'écran reste allumé' : 'Anti-veille désactivé');
+};
+
+// ---------- mises à jour automatiques ----------
+let pendingUpd = null, autoBusy = false;
+function maybeAutoInstall() {
+  if (!pendingUpd || !S.auto_update || autoBusy || mode === 'open' || live.game) return;
+  autoBusy = true;
+  invoke('install_update').catch(() => { autoBusy = false; });
+}
+$('#pAutoUpd').onchange = () => persist({ auto_update: $('#pAutoUpd').checked }).then(maybeAutoInstall);
+setInterval(() => checkUpdate(), 6 * 3600e3);
+
 // ---------- init ----------
 (async () => {
   try { S = await invoke('get_settings'); fillSettings(); } catch {}
-  $('#pVer').textContent = 'v' + (await invoke('app_version').catch(() => '?'));
-  $('#focusMin').value = focusMin;
-  $$('#focusPresets button').forEach((x) => x.classList.toggle('on', +x.dataset.min === focusMin));
+  $('#pVer').textContent = $('#pVer2').textContent = 'v' + (await invoke('app_version').catch(() => '?'));
+  clips = (await invoke('clip_list').catch(() => null)) || [];
+  renderClips();
+  if (tm.end && tm.end < Date.now()) { tm.end = 0; tm.left = tm.total; }
+  tmSave();
   selectGame(curGame);
   onLive(await invoke('live_state').catch(() => null));
   onVoice(await invoke('voice_state').catch(() => null));

@@ -28,141 +28,168 @@
       <span class="brand"><img src="logo.png" alt="">REZ</span>
       <span class="top-time"><b id="time">00:00</b><span id="date"></span></span>
       <span class="top-btns">
-        <button class="icon-btn hidden" id="btnLock" title="Verrouiller à cet endroit"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></button>
+        <button class="icon-btn" id="btnLock" title="Déverrouiller pour déplacer l'île"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></button>
         <button class="icon-btn" id="btnSettings" title="Réglages"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><i class="badge hidden" id="setBadge"></i></button>
         <button class="icon-btn" id="btnCollapse" title="Réduire (Échap)"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
       </span>
     </header>
 
     <main id="views">
-      <!-- ACCUEIL -->
+      <!-- ACCUEIL : grille de widgets modulable -->
       <section class="view active" data-view="home">
-        <div class="tabs" id="homeTabs">
-          <button data-sub="ov" class="on">Aperçu</button>
-          <button data-sub="wx">Météo</button>
-          <button data-sub="tools">Outils</button>
-          <button data-sub="dl">Téléch.<i class="tab-dot hidden" id="dlDot"></i></button>
+        <div class="card update hidden" id="updCard">
+          <span><b>MAJ <span id="updVer"></span></b><small id="updNotes"></small></span>
+          <button class="btn primary sm" id="updBtn">Installer</button>
+        </div>
+        <div class="wgrid" id="wgrid"></div>
+        <div class="wadd hidden" id="wAdd">
+          <span class="wg-h">Ajouter un widget</span>
+          <div class="wadd-list" id="wAddList"></div>
+        </div>
+        <div class="wfoot">
+          <button class="icon-btn" id="btnEdit" title="Personnaliser l'accueil"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg></button>
+          <span class="whint" id="wHint"></span>
+          <button class="btn primary sm hidden" id="btnEditDone">Terminé</button>
+          <button class="icon-btn" data-go="settings" title="Réglages"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg></button>
         </div>
 
-        <!-- Aperçu -->
-        <div class="sub on" data-sub="ov">
-          <div class="hero">
-            <div class="clock"><span id="bigTime">00:00</span><span id="sec">00</span></div>
-            <button class="weather" data-sub-go="wx">
-              <span class="w-ico" id="wIco">·</span>
-              <span><b id="wTemp">--°</b><small id="wDesc">Météo</small></span>
-            </button>
-          </div>
-          <div class="card update hidden" id="updCard">
-            <span><b>MAJ <span id="updVer"></span></b><small id="updNotes"></small></span>
-            <button class="btn primary sm" id="updBtn">Installer</button>
-          </div>
-          <div class="card np" id="npCard">
-            <div class="cover sm" id="npCover"><img alt=""><span class="ph">♪</span><i class="app-badge"></i></div>
-            <div class="meta">
-              <div class="t" id="npTitle">Aucune lecture</div>
-              <div class="s" id="npArtist">—</div>
-              <div class="bar"><i id="npProg"></i></div>
+        <!-- réserve : chaque widget vit ici quand il est désactivé -->
+        <div id="wpool" hidden>
+          <div class="w s22 w-timer" data-w="timer">
+            <div class="w-h"><svg viewBox="0 0 24 24"><path d="M6 2.5h12M6 21.5h12M7 2.5c0 6 10 5.5 10 9.5s-10 3.5-10 9.5M17 2.5c0 6-10 5.5-10 9.5s10 3.5 10 9.5"/></svg><span>Minuteur</span><button class="w-ib" id="tmReset" title="Réinitialiser"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9.7 9.7 0 00-6.7 2.8L3 8"/><path d="M3 3v5h5"/></svg></button></div>
+            <div class="tm-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17" id="tmArc"/></svg><b id="tmVal">25:00</b></div>
+            <div class="tm-ctl">
+              <button id="tmMinus" title="Moins"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+              <button class="fill" id="tmPlay" title="Lancer / pause"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
+              <button id="tmPlus" title="Plus"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button>
             </div>
+          </div>
+
+          <div class="w s22 w-media" data-w="media">
+            <div class="wm-top">
+              <div class="cover sm tap" id="npCover" data-go="media" title="Ouvrir le lecteur"><img alt=""><span class="ph">♪</span><i class="app-badge"></i></div>
+              <div class="wm-pos"><span id="npTime">—</span><div class="bar"><i id="npProg"></i></div></div>
+            </div>
+            <div class="wm-meta"><div class="t" id="npTitle">Aucune lecture</div><div class="s" id="npArtist">—</div></div>
             <div class="np-ctl">
               <button class="ctl xs" data-media="prev" title="Précédent"><svg viewBox="0 0 24 24"><path d="M19 20L9 12l10-8v16zM5 19V5"/></svg></button>
               <button class="ctl sm fill" data-media="toggle" title="Lecture/Pause"><svg viewBox="0 0 24 24" class="play-ico"><path d="M7 4l13 8-13 8z"/></svg></button>
               <button class="ctl xs" data-media="next" title="Suivant"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8V4zM19 5v14"/></svg></button>
             </div>
           </div>
-          <div class="card sysw tap" data-go="perf" title="Ouvrir Performance PC">
-            <div class="row between"><span class="wg-h">Système</span><small class="gpu-name" id="gpuName"></small></div>
+
+          <div class="w s22 w-clip" data-w="clip">
+            <div class="w-h"><svg viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4V2.8h6V4M9 10h6M9 14h4"/></svg><span>Presse-papiers</span><button class="w-ib" id="clipClr" title="Vider l'historique"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button></div>
+            <div class="clip-list" id="clipList"><p class="w-empty">Copie quelque chose</p></div>
+          </div>
+
+          <div class="w s21 w-notes" data-w="notes">
+            <div class="w-h"><svg viewBox="0 0 24 24"><path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8 9h8M8 13h4"/></svg><span>Notes</span></div>
+            <textarea id="notes" placeholder="Écris quelque chose"></textarea>
+          </div>
+
+          <div class="w s21 w-coffee" data-w="coffee">
+            <span class="cf-ico"><svg viewBox="0 0 24 24"><path d="M4 9h13v5a5 5 0 01-5 5H9a5 5 0 01-5-5z"/><path d="M17 11h1.5a2.5 2.5 0 010 5H17M8 2.5c-.6.8-.6 1.7 0 2.5M12 2.5c-.6.8-.6 1.7 0 2.5"/></svg></span>
+            <span class="cf-t"><b>Anti-veille</b><small id="cfTxt">Désactivé</small></span>
+            <label class="tog" title="Garder l'écran et le PC allumés"><input type="checkbox" id="cfOn"><span></span></label>
+          </div>
+
+          <button class="w s21 w-weather" data-w="weather" data-go="weather" title="Météo détaillée">
+            <span class="w-ico" id="wIco">·</span>
+            <span class="wx-t"><b id="wTemp">--°</b><small id="wDesc">Météo</small></span>
+          </button>
+
+          <div class="w s21 w-clock" data-w="clock">
+            <div class="clock"><span id="bigTime">00:00</span><span id="sec">00</span></div>
+            <small id="wDate"></small>
+          </div>
+
+          <div class="w s21 w-focus" data-w="focus">
+            <div class="w-h"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".6"/></svg><span>Focus</span></div>
+            <div class="fc-row">
+              <button class="fc-adj" id="fcMinus" title="Moins">−</button>
+              <b id="fcVal">25:00</b>
+              <button class="fc-adj" id="fcPlus" title="Plus">+</button>
+              <button class="fc-go" id="fcBtn" title="Lancer / arrêter le mode Focus"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
+            </div>
+            <small id="fcTxt">Coupe les notifs Discord</small>
+          </div>
+
+          <div class="w s41 w-sys tap" data-w="sys" data-go="perf" title="Ouvrir Performance PC">
             <div class="gauges">
-              <div class="gauge" id="gCpu"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>CPU</span><em class="temp">—</em></div>
-              <div class="gauge" id="gGpu"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>GPU</span><em class="temp">—</em></div>
-              <div class="gauge" id="gRam"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>RAM</span><em>—</em></div>
-              <div class="gauge" id="gVram"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>VRAM</span><em>—</em></div>
+              <div class="gauge" id="gCpu"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>CPU <em class="temp">—</em></span></div>
+              <div class="gauge" id="gGpu"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>GPU <em class="temp">—</em></span></div>
+              <div class="gauge" id="gRam"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>RAM <em>—</em></span></div>
+              <div class="gauge" id="gVram"><div class="g-ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle class="arc" cx="20" cy="20" r="17"/></svg><b>0%</b></div><span>VRAM <em>—</em></span></div>
             </div>
+            <small class="gpu-name hidden" id="gpuName"></small>
           </div>
-          <div class="devstrip hidden" id="homeDev" data-go="devices" title="Périphériques"></div>
-          <div class="widgets">
-            <button class="wg" id="wgFocus" data-sub-go="tools">
-              <span class="wg-h">Focus</span>
-              <b id="wgFocusVal">25:00</b>
-              <small id="wgFocusTxt">Prêt</small>
-            </button>
-            <button class="wg dlw" id="wgDl" data-sub-go="dl">
-              <span class="wg-h">Téléchargements</span>
-              <b id="wgDlVal">Aucun</b>
-              <small id="wgDlSub">↓ 0 Ko/s</small>
-              <div class="bar"><i id="wgDlBar"></i></div>
-            </button>
-            <button class="wg" data-go="discord">
-              <span class="wg-h">Discord</span>
-              <span class="who"><img class="pp hidden" id="wgPP" alt=""><span class="pp ph" id="wgPPph">?</span><span class="who-t"><b id="wgDName">Hors ligne</b><small id="wgDSub">—</small></span></span>
-            </button>
-            <button class="wg" data-go="stats">
-              <span class="wg-h">En jeu</span>
-              <b class="game-name" id="wgGame">Aucun jeu</b>
-              <small id="wgGameSub">Stats &amp; trackers</small>
-            </button>
-          </div>
-          <div class="quick" id="quickPins"></div>
-        </div>
 
-        <!-- Météo -->
-        <div class="sub" data-sub="wx">
-          <form class="row" id="wxForm">
-            <input id="wxCity" class="grow" placeholder="Ville (Entrée pour chercher)" autocomplete="off">
-            <button class="btn primary sq" title="Chercher"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
-          </form>
-          <div class="card wx-now">
-            <span class="w-ico big" id="wxIco">·</span>
-            <div class="grow">
-              <b id="wxTemp">--°</b>
-              <small id="wxDesc">—</small>
-            </div>
-            <div class="wx-mm"><span id="wxMax">↑ --°</span><span id="wxMin">↓ --°</span></div>
+          <div class="w s41 w-dev tap" data-w="dev" data-go="devices" title="Périphériques">
+            <div class="devstrip" id="homeDev"><span class="w-empty">Aucune batterie détectée</span></div>
           </div>
-          <div class="wx-grid" id="wxGrid"></div>
-          <div class="hourly" id="wxHours"></div>
-          <div class="days" id="wxDays"></div>
-        </div>
 
-        <!-- Téléchargements -->
-        <div class="sub" data-sub="dl">
-          <div class="card net">
-            <span class="net-ico">↓</span>
-            <div class="grow"><b id="netVal">0 Ko/s</b><small>Débit descendant du PC</small></div>
-          </div>
-          <div id="dlList"></div>
-          <p class="hint">Steam (progression exacte), qBittorrent (API Web locale), navigateurs et torrents du dossier Téléchargements. Epic, EA, Battle.net et Ubisoft ne publient pas leur progression : REZ affiche alors le débit réseau.</p>
-        </div>
+          <button class="w s21 wg dlw" data-w="dl" id="wgDl" data-go="dl">
+            <span class="wg-h">Téléchargements</span>
+            <b id="wgDlVal">Aucun</b>
+            <small id="wgDlSub">↓ 0 Ko/s</small>
+            <div class="bar"><i id="wgDlBar"></i></div>
+          </button>
 
-        <!-- Outils -->
-        <div class="sub" data-sub="tools">
-          <div class="card focus" id="focusCard">
-            <div class="row between">
-              <span class="wg-h">Mode Focus</span>
-              <span class="chip" id="focusState">Inactif</span>
-            </div>
-            <div class="focus-main">
-              <div class="ring" id="focusRing"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/><circle cx="20" cy="20" r="17" id="focusArc"/></svg><b id="focusVal">25:00</b></div>
-              <div class="grow focus-side">
-                <div class="presets" id="focusPresets">
-                  <button data-min="15">15</button><button data-min="25" class="on">25</button><button data-min="45">45</button><button data-min="60">60</button>
-                </div>
-                <div class="row">
-                  <input id="focusMin" type="number" min="1" max="600" value="25" class="grow" title="Minutes">
-                  <button class="btn primary" id="focusBtn">Lancer</button>
-                </div>
-              </div>
-            </div>
-            <small class="hint">Masque les notifications Discord pendant le minuteur, restaurées à la fin.</small>
-          </div>
-          <div class="apps">
-            <button data-launch="screenshot"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3"/><circle cx="12" cy="12" r="3"/></svg>Capture</button>
-            <button data-go="calc"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 7h7M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01M8.5 15h.01M12 15h.01M15.5 15h.01M8.5 18h.01M12 18h3.5"/></svg>Calcul</button>
-            <button data-go="perf"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Perf</button>
-            <button data-go="devices"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M22 10.5v3M7 10v4M10.5 10v4"/></svg>Batteries</button>
-          </div>
-          <textarea class="notes" id="notes" placeholder="Notes rapides…"></textarea>
+          <button class="w s21 wg" data-w="discord" data-go="discord">
+            <span class="wg-h">Discord</span>
+            <span class="who"><img class="pp hidden" id="wgPP" alt=""><span class="pp ph" id="wgPPph">?</span><span class="who-t"><b id="wgDName">Hors ligne</b><small id="wgDSub">—</small></span></span>
+          </button>
+
+          <button class="w s21 wg" data-w="game" data-go="stats">
+            <span class="wg-h">En jeu</span>
+            <b class="game-name" id="wgGame">Aucun jeu</b>
+            <small id="wgGameSub">Stats &amp; trackers</small>
+          </button>
+
+          <div class="w s41 w-pins" data-w="pins"><div class="quick" id="quickPins"></div></div>
+
+          <button class="w s11 qt" data-w="q_calc" data-go="calc" title="Calculatrice"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8.5 7h7M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01M8.5 15h.01M12 15h.01M15.5 15h.01M8.5 18h.01M12 18h3.5"/></svg><span>Calcul</span></button>
+          <button class="w s11 qt" data-w="q_shot" data-launch="screenshot" title="Capture d'écran"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3"/><circle cx="12" cy="12" r="3"/></svg><span>Capture</span></button>
+          <button class="w s11 qt" data-w="q_perf" data-go="perf" title="Performance PC"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg><span>Perf</span></button>
+          <button class="w s11 qt" data-w="q_dev" data-go="devices" title="Périphériques"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="16" height="10" rx="2.5"/><path d="M22 10.5v3M7 10v4M10.5 10v4"/></svg><span>Batteries</span></button>
+          <button class="w s11 qt" data-w="q_files" data-go="files" title="Fichiers"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg><span>Fichiers</span></button>
+          <button class="w s11 qt" data-w="q_ai" data-go="ai" title="Chat IA"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg><span>IA</span></button>
+          <button class="w s11 qt" data-w="q_mix" data-go="media" data-mix title="Mélangeur audio"><svg viewBox="0 0 24 24"><path d="M5 21v-7M5 10V3M12 21v-9M12 8V3M19 21v-5M19 12V3M2 14h6M9 8h6M16 16h6"/></svg><span>Mixer</span></button>
+          <button class="w s11 qt" data-w="q_stats" data-go="stats" title="Stats de jeu"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Stats</span></button>
+          <button class="w s11 qt gear" data-w="q_set" data-go="settings" title="Réglages"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg><span>Réglages</span></button>
         </div>
+      </section>
+
+      <!-- MÉTÉO (page) -->
+      <section class="view" data-view="weather">
+        <div class="page-h"><button class="icon-btn back" data-back title="Retour"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><b>Météo</b></div>
+        <form class="row" id="wxForm">
+          <input id="wxCity" class="grow" placeholder="Ville (Entrée pour chercher)" autocomplete="off">
+          <button class="btn primary sq" title="Chercher"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
+        </form>
+        <div class="card wx-now">
+          <span class="w-ico big" id="wxIco">·</span>
+          <div class="grow">
+            <b id="wxTemp">--°</b>
+            <small id="wxDesc">—</small>
+          </div>
+          <div class="wx-mm"><span id="wxMax">↑ --°</span><span id="wxMin">↓ --°</span></div>
+        </div>
+        <div class="wx-grid" id="wxGrid"></div>
+        <div class="hourly" id="wxHours"></div>
+        <div class="days" id="wxDays"></div>
+      </section>
+
+      <!-- TÉLÉCHARGEMENTS (page) -->
+      <section class="view" data-view="dl">
+        <div class="page-h"><button class="icon-btn back" data-back title="Retour"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button><b>Téléchargements</b></div>
+        <div class="card net">
+          <span class="net-ico">↓</span>
+          <div class="grow"><b id="netVal">0 Ko/s</b><small>Débit descendant du PC</small></div>
+        </div>
+        <div id="dlList"></div>
+        <p class="hint">Steam (progression exacte), qBittorrent (API Web locale), navigateurs et torrents du dossier Téléchargements. Epic, EA, Battle.net et Ubisoft ne publient pas leur progression : REZ affiche alors le débit réseau.</p>
       </section>
 
       <!-- MULTIMÉDIA -->
@@ -443,6 +470,26 @@
         </div>
 
         <div class="set-group">
+          <div class="set-t"><i style="--c:#60a5fa"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="18" height="7.5" rx="2"/></svg></i>Accueil &amp; widgets</div>
+          <div class="card form">
+            <div class="row">
+              <button class="btn primary grow" id="pWEdit">Organiser sur l'accueil</button>
+              <button class="btn" id="pWReset">Par défaut</button>
+            </div>
+            <small class="hint">Active, désactive ou déplace chaque widget. Sur l'accueil, ✎ puis glisse les tuiles où tu veux.</small>
+            <div class="wlist" id="pWidgets"></div>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <div class="set-t"><i style="--c:#c084fc"><svg viewBox="0 0 24 24"><rect x="2.5" y="15" width="19" height="6" rx="3"/><path d="M7 18h.01M12 18h.01M17 18h.01M7 3v8M12 3v8M17 3v8"/></svg></i>Modules du dock</div>
+          <div class="card form">
+            <div class="mods" id="pModules"></div>
+            <small class="hint">Un module masqué disparaît du dock. Sans le module Batteries ni son widget, REZ ne lit plus les périphériques.</small>
+          </div>
+        </div>
+
+        <div class="set-group">
           <div class="set-t"><i style="--c:#22d3ee"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8 4v4h8V4"/></svg></i>Position</div>
           <div class="card form">
             <div class="seg three" id="pDock">
@@ -476,15 +523,24 @@
         </div>
 
         <div class="set-group">
+          <div class="set-t"><i style="--c:#a3e635"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></svg></i>Mises à jour</div>
+          <div class="card form">
+            <div class="upd-row"><span>Version installée</span><b id="pVer2">-</b></div>
+            <div class="upd-row"><span>Dernière vérification</span><b id="pUpdState">—</b></div>
+            <label class="tog"><input type="checkbox" id="pAutoUpd"><span></span>Mises à jour automatiques</label>
+            <small class="hint">Vérifie toutes les 6 h. La mise à jour s'installe quand l'île est réduite et qu'aucun jeu ne tourne (fichier vérifié SHA-256).</small>
+            <button class="btn" id="pCheck">Vérifier les mises à jour</button>
+          </div>
+        </div>
+
+        <div class="set-group">
           <div class="set-t"><i style="--c:#f472b6"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></i>Système</div>
           <div class="card form">
             <label class="tog"><input type="checkbox" id="pAuto"><span></span>Lancer avec Windows</label>
-            <div class="row">
-              <button class="btn grow" id="pCheck">Rechercher une mise à jour</button>
-              <button class="btn danger" id="pQuit">Quitter</button>
-            </div>
+            <button class="btn danger" id="pQuit">Quitter REZ</button>
           </div>
         </div>
+
         <button class="btn primary save-bar" id="pSave">Enregistrer</button>
       </section>
     </main>

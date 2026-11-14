@@ -35,6 +35,7 @@ REZ/
    ├─ icons/               icon.ico + PNG (générés)
    └─ src/
       ├─ main.rs           fenêtre, tray, raccourci, commandes
+      ├─ clip.rs           historique du presse-papiers (mémoire seule)
       ├─ settings.rs       paramètres JSON (%APPDATA%\com.rez.island)
       ├─ secure.rs         chiffrement DPAPI des clés API
       ├─ media.rs          lecture/pause/suivant + volume
@@ -104,19 +105,25 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 | Ouvrir / réduire | `Ctrl+B` (modifiable), clic sur la pilule ou l'icône tray, `Échap` pour réduire |
 | Masquer / afficher l'île | `Ctrl+N` (modifiable, Retour arrière pour le désactiver). REZ reste dans le tray |
 | Position | Réglages (⚙ en haut) → Haut / Gauche / Droite. Les panneaux s'ouvrent toujours vers l'intérieur de l'écran |
-| Déplacer l'île | Réglages → « Déverrouiller l'emplacement », glisser la pilule ou l'en-tête (multi-écrans), puis 🔒 : l'île reste exactement là |
+| Déplacer l'île | Cadenas en haut de l'île (ou Réglages → « Déverrouiller l'emplacement »), glisser la pilule ou l'en-tête n'importe où : haut, bas, côtés, coins, multi-écrans. Re-clic sur le cadenas : l'île reste exactement là, même après redémarrage |
 | Opacité | Réglages → curseur « Opacité du verre » |
 | Thèmes | Réglages → Apparence : Violet, Cyan, Rose, Vert, Orange, Graphite |
-| Réglages | Bouton ⚙ en haut de l'île : page dédiée (Apparence, Position, Raccourcis, Services, Système) |
+| Réglages | Roue crantée ⚙ (en-tête, pied de l'accueil ou tuile) : page dédiée Apparence, Accueil & widgets, Modules du dock, Position, Raccourcis, Services, Mises à jour, Système |
 | Lecteur | Pochette HD + icône de l'app, ±10 s, piste précédente / suivante, barre de progression cliquable |
 | Mélangeur audio | Multimédia → Mélangeur audio : un volume (et un muet) par application qui joue du son |
 | Système | Accueil → jauges CPU, GPU, RAM, VRAM + températures CPU / GPU (si Windows les fournit). Clic → Performance PC |
 | Performance PC | Dock → courbes en direct (CPU, GPU, RAM, VRAM, disque, réseau), charge par cœur, fréquence, processus / threads / handles, applications les plus gourmandes (CPU ou mémoire) |
 | Périphériques | Dock → casque, manette, souris, clavier sans fil : % de batterie, icône par type, vert si bon, orange en charge ou bas, rouge si faible (alerte). Résumé sur l'accueil |
-| Calculatrice | Accueil → Outils → Calcul : calculatrice intégrée (clavier physique, historique, √, xʸ, π, %) + conversion d'unités (longueur, masse, température, volume, vitesse, surface, données, temps, énergie) |
-| Téléchargements | Accueil → Téléch. : Steam (% exact + temps restant), qBittorrent, navigateurs. Progression aussi dans la pilule |
-| Accueil | Onglets Aperçu (widgets Focus, Système, Discord, Jeu, raccourcis) / Météo (heure par heure, 5 jours) / Outils |
-| Mode Focus | Accueil → Outils : minuteur. Les notifications Discord sont masquées jusqu'à la fin |
+| Calculatrice | Tuile Calcul : calculatrice intégrée (clavier physique, historique, √, xʸ, π, %) + conversion d'unités (longueur, masse, température, volume, vitesse, surface, données, temps, énergie) |
+| Téléchargements | Widget Téléchargements → page dédiée : Steam (% exact + temps restant), qBittorrent, navigateurs. Progression aussi dans la pilule |
+| Accueil | Grille de widgets en verre fumé : Minuteur, Lecteur, Presse-papiers, Notes, Anti-veille, Météo, Horloge, Focus, Système, Batteries, Téléchargements, Discord, Jeu, Dossiers + tuiles d'accès rapide |
+| Personnaliser | ✎ en bas de l'accueil : glisser les tuiles pour les déplacer, × pour retirer, « Ajouter un widget ». Ou Réglages → Accueil & widgets (activer / désactiver, monter / descendre) |
+| Minuteur | Widget : − / ▶ / +, anneau de progression, compte à rebours dans la pilule, son à la fin |
+| Presse-papiers | Widget : les 30 derniers textes copiés (en mémoire uniquement, jamais sur disque), clic pour recopier. Les copies des gestionnaires de mots de passe sont ignorées |
+| Anti-veille | Widget : garde l'écran et le PC allumés (interrupteur) |
+| Mises à jour | Réglages → Mises à jour : « Vérifier les mises à jour » + installation automatique (île réduite, hors jeu, fichier vérifié SHA-256) |
+| Modules | Réglages → Modules du dock : masquer Multimédia, Discord, Stats, Performance, Batteries, IA ou Fichiers |
+| Mode Focus | Widget Focus : − / + pour la durée, ▶ pour lancer. Les notifications Discord sont masquées jusqu'à la fin |
 | Discord | Assistant intégré (vue Discord) : colle l'Application ID, REZ le vérifie auprès de Discord et l'enregistre. Connexion auto, réessais discrets si Discord n'est pas prêt. Photo de profil, présence auto selon le jeu, présence perso |
 | Vocal Discord | Client ID + Client Secret de ton app (redirection `http://localhost`), puis « Activer le vocal » : membres du salon, qui parle (cercle vert), micro / casque / quitter |
 | Trackers | Stats → choisir le jeu → lier son ID. Valorant : rang + dernière partie avec alliés et adversaires. Apex : statut en direct |

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
+mod clip;
 mod devices;
 mod discord;
 mod downloads;
@@ -170,13 +171,18 @@ fn anchor_from(mons: &[Rect], x: i32, y: i32, wd: i32, ht: i32) -> Option<((i32,
     let rx = (cx - mx) as f64 / mw as f64;
     let ry = (cy - my) as f64 / mh as f64;
     let h = if rx < 0.34 { 'l' } else if rx > 0.66 { 'r' } else { 'c' };
-    let v = if ry > 0.5 { 'b' } else { 't' };
+    // 9 zones : l'île reste exactement où on la pose et grandit vers l'intérieur de l'écran
+    let v = if ry < 0.34 { 't' } else if ry > 0.66 { 'b' } else { 'm' };
     let ax = match h {
         'l' => x,
         'r' => x + wd,
         _ => cx,
     };
-    let ay = if v == 'b' { y + ht } else { y };
+    let ay = match v {
+        'b' => y + ht,
+        'm' => cy,
+        _ => y,
+    };
     Some(((ax, ay), format!("{h}{v}")))
 }
 
@@ -405,6 +411,7 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut s: Settings) -> Res
     s.align = old.align.clone();
     s.focus_until = old.focus_until;
     s.focus_prev = old.focus_prev.clone();
+    s.awake = old.awake;
     s.discord_token = old.discord_token.clone();
     if s.discord_client_id.trim() != old.discord_client_id.trim() || s.discord_secret != old.discord_secret {
         s.discord_token.clear(); // autre app Discord -> nouvelle autorisation vocale
@@ -485,6 +492,38 @@ fn start_drag(app: AppHandle, state: State<AppState>) -> Result<(), String> {
     }
     let w = app.get_webview_window("main").ok_or("fenêtre")?;
     w.start_dragging().map_err(err)
+}
+
+#[tauri::command]
+fn clip_list() -> Value {
+    clip::list()
+}
+
+#[tauri::command]
+fn clip_copy(text: String) -> Result<(), String> {
+    clip::write_text(&text)
+}
+
+#[tauri::command]
+fn clip_clear(index: Option<usize>) {
+    match index {
+        Some(i) => clip::remove(i),
+        None => clip::clear(),
+    }
+}
+
+#[tauri::command]
+fn keep_awake(app: AppHandle, state: State<AppState>, on: bool) {
+    sys::keep_awake(on);
+    let changed = {
+        let mut s = state.settings.lock().unwrap();
+        let c = s.awake != on;
+        s.awake = on;
+        c
+    };
+    if changed {
+        persist(&app);
+    }
 }
 
 #[tauri::command]
@@ -895,6 +934,9 @@ fn main() {
                 let _ = register_shortcuts(&handle, &s.shortcut, "");
             }
             let pill_mode = s.pill_mode;
+            if s.awake {
+                sys::keep_awake(true);
+            }
             let (vtx, vrx) = std::sync::mpsc::channel();
             app.manage(AppState {
                 settings: Mutex::new(s),
@@ -941,6 +983,8 @@ fn main() {
             let h = handle.clone();
             std::thread::spawn(move || voice::run(h, vrx));
             std::thread::spawn(devices::warm_up);
+            let h = handle.clone();
+            std::thread::spawn(move || clip::run(h));
             Ok(())
         })
         .on_window_event(|w, ev| match ev {
@@ -991,6 +1035,10 @@ fn main() {
             hide_window,
             island_fit,
             start_drag,
+            clip_list,
+            clip_copy,
+            clip_clear,
+            keep_awake,
             startup_state,
             live_state,
             quit_app,

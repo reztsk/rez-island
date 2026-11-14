@@ -54,6 +54,14 @@ pub struct Settings {
     /// Mode Focus : fin (s, epoch) + valeurs registre d'origine à restaurer.
     pub focus_until: u64,
     pub focus_prev: BTreeMap<String, i64>,
+    /// Widgets de l'accueil, dans l'ordre (None = disposition par défaut).
+    pub widgets: Option<Vec<String>>,
+    /// Modules masqués du dock (media, discord, stats, perf, devices, ai, files).
+    pub modules_off: Vec<String>,
+    /// Installe les mises à jour toute seule (quand l'île est réduite et hors jeu).
+    pub auto_update: bool,
+    /// Anti-veille (écran et PC restent allumés).
+    pub awake: bool,
 }
 
 impl Default for Settings {
@@ -90,6 +98,10 @@ impl Default for Settings {
             players: BTreeMap::new(),
             focus_until: 0,
             focus_prev: BTreeMap::new(),
+            widgets: None,
+            modules_off: vec![],
+            auto_update: true,
+            awake: false,
         }
     }
 }
