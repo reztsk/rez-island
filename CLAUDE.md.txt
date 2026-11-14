@@ -1,0 +1,15 @@
+# Instructions pour le projet REZ
+
+- **Mode de communication :** Caveman strict. Zéro blabla, uniquement du code brut, complet et fonctionnel.
+- **Technologie obligatoire :** Utiliser **Tauri** (interdiction formelle d'utiliser Electron). Le projet doit être configuré en Tauri + Rust/HTML.
+- **Sécurité Anti-Cheat (CRITIQUE) :** Règle absolue. Ne jamais toucher, lire ou injecter quoi que ce soit dans les dossiers des jeux ou dans la mémoire vive (RAM). Utiliser uniquement un overlay externe, des processus inoffensifs ou des APIs publiques (Discord RPC, stats par pseudo). Zéro risque de ban.
+- **Performance & Légèreté :** Consommation minime de RAM, CPU et GPU.
+- **Fonctionnalités obligatoires :**
+  - **Dynamic Island** nommée **REZ** au design *glassmorphism* sombre (verre poli + lueur douce).
+  - Raccourci global d'ouverture/fermeture modifiable et enregistrable dans les paramètres (Ctrl + B par défaut).
+  - **Tray / Icône de notification (Systray) :** L'application doit se réduire dans la petite flèche de la barre des tâches en bas à droite (tray icon) en arrière-plan, avec un menu contextuel (Ouvrir / Quitter).
+  - **Logo / Icône :** Générer une icône propre pour l'application et le fichier `.exe`.
+  - Page d'accueil (heure, date, météo REZ).
+  - Dock inférieur incluant : Multimédia/volume, Discord, Tracker de stats, Chat IA, **Gestionnaire de fichiers rapide** (pour ouvrir des dossiers en 1 clic), et Paramètres.
+  - Système d'**auto-update en 1 clic** via un fichier `version.json` sur GitHub (téléchargement du nouveau `.exe`, remplacement et redémarrage automatique).
+- **Automatisation :** Fournir l'architecture des fichiers, le code complet et les commandes exactes pour compiler facilement avec Tauri et gérer GitHub.

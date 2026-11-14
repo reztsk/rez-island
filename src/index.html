@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>REZ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="island" class="island">
+  <div class="glow"></div>
+
+  <header class="top">
+    <button class="brand" data-go="home" title="Accueil"><img src="logo.png" alt=""><span>REZ</span></button>
+    <div class="pill"><span class="dot" id="pillDot"></span><span id="pillText">--:--</span></div>
+    <button class="icon-btn" id="btnHide" title="Masquer (Échap)">
+      <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </header>
+
+  <main id="views">
+    <!-- ACCUEIL -->
+    <section class="view active" data-view="home">
+      <div class="clock"><span id="time">00:00</span><span id="sec">00</span></div>
+      <div class="date" id="date"></div>
+      <div class="card weather" id="weather">
+        <div class="w-ico" id="wIco">·</div>
+        <div class="w-main">
+          <div class="w-temp" id="wTemp">--°</div>
+          <div class="w-desc" id="wDesc">Météo REZ</div>
+        </div>
+        <div class="w-side" id="wSide"></div>
+      </div>
+      <div class="card update hidden" id="updCard">
+        <div><b>Mise à jour <span id="updVer"></span></b><small id="updNotes"></small></div>
+        <button class="btn primary" id="updBtn">Installer</button>
+      </div>
+      <div class="tiles">
+        <button class="tile" data-go="media"><span>♪</span>Musique</button>
+        <button class="tile" data-go="ai"><span>✦</span>Chat IA</button>
+        <button class="tile" data-go="files"><span>▤</span>Dossiers</button>
+      </div>
+    </section>
+
+    <!-- MULTIMÉDIA -->
+    <section class="view" data-view="media">
+      <h2>Multimédia</h2>
+      <div class="card now">
+        <div class="art" id="mArt">♪</div>
+        <div class="meta">
+          <div class="t" id="mTitle">Aucune lecture</div>
+          <div class="s" id="mArtist">—</div>
+          <div class="chip" id="mApp"></div>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="ctl" id="mPrev" title="Précédent"><svg viewBox="0 0 24 24"><path d="M19 20L9 12l10-8v16zM5 19V5"/></svg></button>
+        <button class="ctl big" id="mPlay" title="Lecture/Pause"><svg viewBox="0 0 24 24" id="mPlayIco"><path d="M7 4l13 8-13 8z"/></svg></button>
+        <button class="ctl" id="mNext" title="Suivant"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8V4zM19 5v14"/></svg></button>
+      </div>
+      <div class="card vol">
+        <button class="icon-btn" id="mMute" title="Muet"><svg viewBox="0 0 24 24" id="mMuteIco"><path d="M11 5L6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 010 7M19 5a10 10 0 010 14"/></svg></button>
+        <input type="range" id="mVol" min="0" max="100" value="50">
+        <span id="mVolVal">50</span>
+      </div>
+      <p class="hint">Contrôle Spotify, navigateurs, lecteurs Windows via l'API média système.</p>
+    </section>
+
+    <!-- DISCORD -->
+    <section class="view" data-view="discord">
+      <h2>Discord</h2>
+      <div class="card form">
+        <div class="row between">
+          <span class="status" id="dStatus">Déconnecté</span>
+          <button class="btn" id="dOpen">Ouvrir Discord</button>
+        </div>
+        <label>Ligne 1<input id="dDetails" maxlength="128"></label>
+        <label>Ligne 2<input id="dState" maxlength="128"></label>
+        <div class="row">
+          <button class="btn primary grow" id="dSet">Activer la présence</button>
+          <button class="btn" id="dClear">Effacer</button>
+        </div>
+      </div>
+      <p class="hint">Rich Presence via l'IPC officiel local de Discord. Crée une application sur discord.com/developers, colle son Client ID dans Paramètres (asset image optionnel : « rez »).</p>
+    </section>
+
+    <!-- STATS -->
+    <section class="view" data-view="stats">
+      <h2>Tracker de stats</h2>
+      <div class="card form">
+        <div class="row">
+          <select id="sGame" class="grow">
+            <option value="fortnite">Fortnite (API)</option>
+            <option value="r6">Rainbow Six Siege</option>
+            <option value="valorant">Valorant</option>
+            <option value="apex">Apex Legends</option>
+            <option value="rl">Rocket League</option>
+          </select>
+          <select id="sPlat">
+            <option value="epic">Epic</option>
+            <option value="psn">PSN</option>
+            <option value="xbl">Xbox</option>
+          </select>
+          <select id="sWin">
+            <option value="lifetime">Total</option>
+            <option value="season">Saison</option>
+          </select>
+        </div>
+        <div class="row">
+          <input id="sName" class="grow" placeholder="Pseudo (Valorant : Nom#TAG)">
+          <button class="btn primary" id="sGo">Chercher</button>
+        </div>
+      </div>
+      <div id="sOut"></div>
+      <p class="hint">Stats publiques par pseudo uniquement. Aucune interaction avec les jeux.</p>
+    </section>
+
+    <!-- CHAT IA -->
+    <section class="view chat-view" data-view="ai">
+      <div class="row between"><h2>Chat IA</h2><button class="btn ghost" id="aClear">Effacer</button></div>
+      <div class="chat" id="aLog"><div class="msg bot">Salut, je suis REZ. Pose ta question.</div></div>
+      <form class="chat-in" id="aForm">
+        <textarea id="aIn" rows="1" placeholder="Demande à REZ…"></textarea>
+        <button class="btn primary" id="aSend" title="Envoyer">
+          <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </form>
+    </section>
+
+    <!-- FICHIERS -->
+    <section class="view" data-view="files">
+      <h2>Accès rapide</h2>
+      <div class="fgrid" id="fGrid"></div>
+      <form class="card form" id="fForm">
+        <div class="row">
+          <input id="fName" placeholder="Nom" style="width:34%">
+          <input id="fPath" class="grow" placeholder="C:\Chemin\Dossier">
+        </div>
+        <button class="btn primary">Épingler</button>
+      </form>
+      <p class="hint">Astuce : glisse un dossier sur REZ pour l'épingler.</p>
+    </section>
+
+    <!-- PARAMÈTRES -->
+    <section class="view" data-view="settings">
+      <h2>Paramètres</h2>
+      <div class="card form">
+        <label>Raccourci global<input id="pShortcut" readonly placeholder="Clique puis appuie sur la combinaison"></label>
+        <label>Ville météo<input id="pCity"></label>
+        <label>Discord Client ID<input id="pDiscord" inputmode="numeric"></label>
+        <label>Clé fortnite-api.com<input id="pFn" type="password" autocomplete="off"></label>
+        <label>Clé API Anthropic (chat IA)<input id="pAi" type="password" autocomplete="off"></label>
+        <label>Modèle IA<input id="pModel" placeholder="claude-opus-5-5"></label>
+        <label class="tog"><input type="checkbox" id="pAuto"><span></span>Lancer avec Windows</label>
+        <label class="tog"><input type="checkbox" id="pBlur"><span></span>Masquer quand REZ perd le focus</label>
+        <button class="btn primary" id="pSave">Enregistrer</button>
+      </div>
+      <div class="card row between">
+        <span class="ver">REZ <b id="pVer">-</b></span>
+        <div class="row">
+          <button class="btn" id="pCheck">Vérifier MAJ</button>
+          <button class="btn danger" id="pQuit">Quitter</button>
+        </div>
+      </div>
+      <p class="hint">Clés chiffrées localement (DPAPI Windows), jamais exposées à l'interface.</p>
+    </section>
+  </main>
+
+  <nav class="dock" id="dock">
+    <button data-go="home" class="active" title="Accueil"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6h-6v6H4a1 1 0 01-1-1z"/></svg></button>
+    <button data-go="media" title="Multimédia"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></button>
+    <button data-go="discord" title="Discord"><svg viewBox="0 0 24 24"><path d="M8 7.5C9.3 7 10.6 6.8 12 6.8s2.7.2 4 .7M7.5 16.5c1.4.6 2.9.9 4.5.9s3.1-.3 4.5-.9"/><path d="M8.5 5.5L7 4C5 4.5 3.7 5.4 3 6.5 2 9 1.6 12.5 2 16c1.3 1.5 3 2.5 5 3l1.3-2M15.5 5.5L17 4c2 .5 3.3 1.4 4 2.5 1 2.5 1.4 6 1 9.5-1.3 1.5-3 2.5-5 3l-1.3-2"/><circle cx="9" cy="12.5" r="1.3"/><circle cx="15" cy="12.5" r="1.3"/></svg></button>
+    <button data-go="stats" title="Stats"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></button>
+    <button data-go="ai" title="Chat IA"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg></button>
+    <button data-go="files" title="Fichiers"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
+    <button data-go="settings" title="Paramètres"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><i class="badge hidden" id="setBadge"></i></button>
+  </nav>
+</div>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
