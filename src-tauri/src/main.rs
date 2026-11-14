@@ -35,20 +35,22 @@ const NO_WINDOW: u32 = 0x0800_0000;
 struct Live {
     game: Option<(&'static str, &'static str, u64)>,
     discord_running: bool,
+    /// off | no_id | invalid_id | waiting | ready (géré par le thread Discord).
+    dstate: &'static str,
     connected: bool,
     user: Value,
-    error: String,
     manual: bool,
     manual_since: u64,
+    /// Présence réellement affichée dans Discord.
     last_sent: Option<Value>,
-    retry_at: u64,
+    /// Dernière présence transmise au thread Discord.
+    wanted: Option<Value>,
     downloads: Vec<Value>,
     net: f64,
 }
 
 pub struct AppState {
     settings: Mutex<Settings>,
-    discord: Mutex<Option<discord::Ipc>>,
     live: Mutex<Live>,
     update: Mutex<Option<updater::Remote>>,
     /// Jusqu'à quand (ms) les déplacements de fenêtre viennent de REZ et non de l'utilisateur.
@@ -271,53 +273,43 @@ fn desired_activity(l: &Live, s: &Settings) -> Value {
     Value::Null
 }
 
-/// Se connecte à Discord s'il tourne et pousse la présence voulue (uniquement si elle change).
+/// Transmet la présence voulue au thread Discord (jamais bloquant). `force` = réessayer la connexion maintenant.
 fn sync_discord(app: &AppHandle, force: bool) {
     let st = app.state::<AppState>();
     let s = st.settings.lock().unwrap().clone();
-    let cid = s.discord_client_id.trim().to_string();
-    let mut g = st.discord.lock().unwrap();
-    let mut l = st.live.lock().unwrap();
-    if !l.discord_running || cid.is_empty() {
-        *g = None;
-        l.connected = false;
-        l.user = Value::Null;
-        l.last_sent = None;
-        l.error = if cid.is_empty() { "Client ID manquant (Paramètres)".into() } else { String::new() };
-        return;
+    let want = {
+        let mut l = st.live.lock().unwrap();
+        let w = desired_activity(&l, &s);
+        if l.wanted.as_ref() == Some(&w) {
+            None
+        } else {
+            l.wanted = Some(w.clone());
+            Some(w)
+        }
+    };
+    if let Some(w) = want {
+        voice_send(app, voice::Cmd::Activity(w));
     }
-    if g.is_none() {
-        if !force && now_ms() < l.retry_at {
-            return;
-        }
-        match discord::Ipc::connect(&cid) {
-            Ok(ipc) => {
-                l.user = ipc.user.clone();
-                l.connected = true;
-                l.error.clear();
-                l.last_sent = None;
-                *g = Some(ipc);
-            }
-            Err(e) => {
-                l.connected = false;
-                l.error = if e.contains("pas lancé") { "Connexion à Discord…".into() } else { e };
-                l.retry_at = now_ms() + 15_000;
-                return;
-            }
-        }
+    if force {
+        voice_send(app, voice::Cmd::Kick);
     }
-    let want = desired_activity(&l, &s);
-    if l.last_sent.as_ref() != Some(&want) {
-        match g.as_mut().map(|ipc| ipc.set_activity(&want)) {
-            Some(Ok(())) => l.last_sent = Some(want),
-            Some(Err(e)) => {
-                *g = None;
-                l.connected = false;
-                l.last_sent = None;
-                l.error = e;
-            }
-            None => {}
-        }
+}
+
+/// Appelé par le thread Discord : état de la connexion + présence affichée.
+pub fn set_presence(app: &AppHandle, state: &'static str, user: Value, sent: Option<Value>) {
+    let changed = {
+        let st = app.state::<AppState>();
+        let mut l = st.live.lock().unwrap();
+        let connected = state == "ready";
+        let changed = l.dstate != state || l.connected != connected || l.user != user || l.last_sent != sent;
+        l.dstate = state;
+        l.connected = connected;
+        l.user = user;
+        l.last_sent = sent;
+        changed
+    };
+    if changed {
+        let _ = app.emit("rez://live", snapshot(app));
     }
 }
 
@@ -331,8 +323,8 @@ fn snapshot(app: &AppHandle) -> Value {
         "discord": {
             "running": l.discord_running,
             "connected": l.connected,
+            "state": if l.dstate.is_empty() { "off" } else { l.dstate },
             "user": l.user,
-            "error": l.error,
             "manual": l.manual,
             "activity": if act.is_null() { Value::Null } else { json!({ "details": act["details"], "state": act["state"] }) },
         },
@@ -393,11 +385,7 @@ fn monitor(app: AppHandle) {
 }
 
 fn kick_discord(app: &AppHandle) {
-    let app = app.clone();
-    std::thread::spawn(move || {
-        sync_discord(&app, true);
-        let _ = app.emit("rez://live", snapshot(&app));
-    });
+    sync_discord(app, true);
 }
 
 // ---------- commandes : app ----------
@@ -461,9 +449,6 @@ fn save_settings(app: AppHandle, state: State<AppState>, mut s: Settings) -> Res
         voice_send(&app, voice::Cmd::Reset);
     }
     if s.discord_client_id != old.discord_client_id || s.discord_auto != old.discord_auto {
-        if s.discord_client_id != old.discord_client_id {
-            *state.discord.lock().unwrap() = None;
-        }
         kick_discord(&app);
     }
     Ok(settings::masked(&s))
@@ -654,44 +639,49 @@ async fn media_mute(muted: bool) -> Result<(), String> {
 }
 
 // ---------- commandes : discord ----------
+/// Présence personnalisée : enregistrée tout de suite, affichée dès que Discord est connecté.
 #[tauri::command]
-async fn discord_set(app: AppHandle, details: String, state: String) -> Result<Value, String> {
-    blocking(move || {
-        let st = app.state::<AppState>();
-        {
-            let mut s = st.settings.lock().unwrap();
-            if s.discord_client_id.trim().is_empty() {
-                return Err("Discord Client ID manquant (Paramètres)".into());
-            }
-            s.discord_details = details;
-            s.discord_state = state;
-        }
-        persist(&app);
-        {
-            let mut l = st.live.lock().unwrap();
-            if !l.discord_running {
-                return Err("Discord n'est pas lancé".into());
-            }
-            l.manual = true;
-            l.manual_since = now_s();
-        }
-        sync_discord(&app, true);
-        let snap = snapshot(&app);
-        let _ = app.emit("rez://live", &snap);
-        let l = st.live.lock().unwrap();
-        if l.connected { Ok(snap.clone()) } else { Err(l.error.clone()) }
-    })
-    .await
+fn discord_set(app: AppHandle, details: String, state: String) -> Value {
+    let st = app.state::<AppState>();
+    {
+        let mut s = st.settings.lock().unwrap();
+        s.discord_details = details;
+        s.discord_state = state;
+    }
+    persist(&app);
+    {
+        let mut l = st.live.lock().unwrap();
+        l.manual = true;
+        l.manual_since = now_s();
+    }
+    sync_discord(&app, true);
+    snapshot(&app)
 }
 
 #[tauri::command]
-async fn discord_clear(app: AppHandle) -> Result<Value, String> {
-    blocking(move || {
-        app.state::<AppState>().live.lock().unwrap().manual = false;
-        sync_discord(&app, true);
-        let snap = snapshot(&app);
-        let _ = app.emit("rez://live", &snap);
-        Ok(snap)
+fn discord_clear(app: AppHandle) -> Value {
+    app.state::<AppState>().live.lock().unwrap().manual = false;
+    sync_discord(&app, true);
+    snapshot(&app)
+}
+
+/// Assistant : vérifie auprès de Discord (IPC local) qu'un Application ID est accepté.
+/// Erreurs : "closed" (Discord fermé), "noreply" (Discord occupé), "invalid" (ID refusé) ou un message.
+#[tauri::command]
+async fn discord_test(app: AppHandle, cid: String) -> Result<Value, String> {
+    let cid = cid.trim().to_string();
+    if !discord::valid_id(&cid) {
+        return Err("invalid".into());
+    }
+    if !app.state::<AppState>().live.lock().unwrap().discord_running && !games::scan().discord {
+        return Err("closed".into());
+    }
+    blocking(move || match discord::Conn::open(&cid, Duration::from_secs(15)) {
+        Ok(c) => Ok(c.user.clone()),
+        Err(discord::OpenErr::NotRunning) => Err("closed".into()),
+        Err(discord::OpenErr::NoReply) => Err("noreply".into()),
+        Err(discord::OpenErr::InvalidId) => Err("invalid".into()),
+        Err(discord::OpenErr::Other(m)) => Err(m),
     })
     .await
 }
@@ -831,6 +821,15 @@ fn diag() {
 }
 
 fn main() {
+    // diagnostic : rez --diag-discord <application_id> -> réponse de l'IPC Discord et durée
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--diag-discord") {
+        let cid = args.get(i + 1).cloned().unwrap_or_default();
+        let t0 = std::time::Instant::now();
+        let r = discord::Conn::open(&cid, Duration::from_secs(12)).map(|c| c.user["name"].clone());
+        println!("{:?} en {} ms", r.map_err(|e| format!("{e:?}")), t0.elapsed().as_millis());
+        return;
+    }
     if std::env::args().any(|a| a == "--diag") {
         diag();
         return;
@@ -875,7 +874,6 @@ fn main() {
             let (vtx, vrx) = std::sync::mpsc::channel();
             app.manage(AppState {
                 settings: Mutex::new(s),
-                discord: Mutex::new(None),
                 live: Mutex::new(Live::default()),
                 update: Mutex::new(None),
                 self_move: AtomicU64::new(0),
@@ -990,6 +988,7 @@ fn main() {
             media_mute,
             discord_set,
             discord_clear,
+            discord_test,
             focus_start,
             focus_stop,
             weather,

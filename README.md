@@ -39,8 +39,8 @@ REZ/
       ├─ audio.rs          mélangeur audio par application
       ├─ hw.rs             GPU, VRAM, températures, débit réseau
       ├─ downloads.rs      suivi des téléchargements
-      ├─ voice.rs          vocal Discord (RPC)
-      ├─ discord.rs        Rich Presence IPC
+      ├─ voice.rs          thread Discord unique : présence + vocal, réessais silencieux
+      ├─ discord.rs        connexion IPC Discord non bloquante
       ├─ net.rs            météo, stats, chat IA (Claude, ChatGPT, Gemini)
       └─ updater.rs        auto-update 1 clic
 ```
@@ -108,7 +108,7 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 | Téléchargements | Accueil → Téléch. : Steam (% exact + temps restant), qBittorrent, navigateurs. Progression aussi dans la pilule |
 | Accueil | Onglets Aperçu (widgets Focus, Système, Discord, Jeu, raccourcis) / Météo (heure par heure, 5 jours) / Outils |
 | Mode Focus | Accueil → Outils : minuteur. Les notifications Discord sont masquées jusqu'à la fin |
-| Discord | Connexion auto quand Discord est lancé : photo de profil, présence auto selon le jeu, présence perso |
+| Discord | Assistant intégré (vue Discord) : colle l'Application ID, REZ le vérifie auprès de Discord et l'enregistre. Connexion auto, réessais discrets si Discord n'est pas prêt. Photo de profil, présence auto selon le jeu, présence perso |
 | Vocal Discord | Client ID + Client Secret de ton app (redirection `http://localhost`), puis « Activer le vocal » : membres du salon, qui parle (cercle vert), micro / casque / quitter |
 | Trackers | Stats → choisir le jeu → lier son ID. Valorant : rang + dernière partie avec alliés et adversaires. Apex : statut en direct |
 | Taille | Paramètres → Compact / Large (transition animée) |
@@ -119,7 +119,7 @@ Au démarrage, chaque REZ installé lit `version.json`. Si une version plus réc
 | Stats Fortnite | clé gratuite sur fortnite-api.com → Paramètres |
 | Stats Valorant | clé gratuite HenrikDev (api.henrikdev.xyz, via leur Discord) → Paramètres |
 | Stats Apex | clé gratuite sur apexlegendsapi.com → Paramètres |
-| Discord | créer une app sur discord.com/developers → Client ID dans Paramètres |
+| Discord | assistant dans la vue Discord : créer l'app REZ sur discord.com/developers, coller l'Application ID |
 | Démarrage auto | Paramètres → Lancer avec Windows (démarre masqué dans le tray) |
 
 Les clés API sont chiffrées avec DPAPI (liées à ta session Windows). Elles ne sont jamais renvoyées à l'interface.

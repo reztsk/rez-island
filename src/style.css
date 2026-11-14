@@ -515,3 +515,17 @@ body.drop .island { border-color: rgba(34, 211, 238, .7); }
 .ai-cfg { flex: none; }
 .ai-cfg .row input { font-size: .9rem; }
 #aCfgBtn.need { color: #fcd34d; animation: pulse 1.6s infinite; }
+
+/* ---------- v1.4.1 : assistant Discord ---------- */
+.wiz { border-color: rgba(88, 101, 242, .45); background: linear-gradient(135deg, rgba(88,101,242,.16), rgba(255,255,255,.04)); }
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: flex; flex-direction: column; gap: .55rem; }
+.steps li { counter-increment: st; position: relative; padding-left: 1.85rem; display: flex; flex-direction: column; gap: .35rem; align-items: flex-start; font-size: .84rem; line-height: 1.35; }
+.steps li > .row, .steps li > input { width: 100%; }
+.steps li::before { content: counter(st); position: absolute; left: 0; top: .02rem; width: 1.3rem; height: 1.3rem; border-radius: 50%; display: grid; place-items: center; font-size: .72rem; font-weight: 800; background: rgba(88,101,242,.35); color: #fff; }
+.steps li.done::before { content: "✓"; background: var(--ok); }
+.cp { flex: 1; min-width: 0; padding: .35rem .55rem; border-radius: .6rem; background: rgba(0,0,0,.28); border: 1px solid var(--line); font-size: .8rem; user-select: all; }
+.wz-msg:empty { display: none; }
+.wz-msg.ok { color: #6ee7b7; }
+.wz-msg.warn { color: #fcd34d; }
+.wz-msg.busy::before { content: ""; display: inline-block; width: .55rem; height: .55rem; margin-right: .4rem; border-radius: 50%; background: #fbbf24; animation: pulse 1s infinite; }
+.status.wait::before { animation: pulse 1.4s infinite; }

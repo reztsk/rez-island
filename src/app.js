@@ -586,12 +586,11 @@ function renderDiscord() {
   setPP($('#dPP'), $('#dPPph'), u);
   setPP($('#wgPP'), $('#wgPPph'), u);
   const st = $('#dStatus');
-  let txt, cls = '';
-  if (d.connected) { txt = 'Connecté · Rich Presence prête'; cls = 'on'; }
-  else if (!d.running) txt = 'Discord fermé';
-  else { txt = d.error || 'Connexion…'; cls = 'wait'; }
+  const state = d.state || (d.running ? 'waiting' : 'off');
+  const [txt, cls] = d.connected ? ['Connecté · Rich Presence prête', 'on'] : DSTATE[state] || DSTATE.waiting;
   st.textContent = txt;
   st.className = 'status ' + cls;
+  renderWizard(state);
   $('#dName').textContent = u?.name || 'Discord';
   $('#dUser').textContent = u ? '@' + (u.username || '') : (d.running ? 'Discord lancé' : 'Non connecté');
   $('#dBadge').classList.toggle('hidden', !d.connected);
@@ -599,7 +598,7 @@ function renderDiscord() {
   $('#dAct').textContent = a ? a.details : 'Aucune';
   $('#dActSub').textContent = a ? a.state : (S.discord_auto ? 'Lance un jeu : présence automatique' : 'Présence auto désactivée');
   $('#wgDName').textContent = u?.name || (d.running ? 'Discord' : 'Hors ligne');
-  $('#wgDSub').textContent = a ? a.details : (u ? '@' + u.username : (d.running ? (d.error || 'Connexion…') : 'Discord fermé'));
+  $('#wgDSub').textContent = a ? a.details : (u ? '@' + u.username : (DSTATE[state] || DSTATE.waiting)[0]);
   if (voice.channel) renderVoice();
 }
 function renderGame() {
@@ -656,24 +655,66 @@ $('#focusBtn').onclick = async () => {
 
 // ---------- discord ----------
 $('#dSet').onclick = async () => {
-  const b = $('#dSet'); b.disabled = true;
-  try {
-    const l = await call('discord_set', { details: $('#dDetails').value.trim() || 'Sur REZ', state: $('#dState').value.trim() || 'Dynamic Island' });
-    onLive(l);
-    toast(live.game && S.discord_auto ? 'Enregistrée (le jeu détecté reste prioritaire)' : 'Rich Presence activée');
-  } catch {} finally { b.disabled = false; }
+  const l = await invoke('discord_set', { details: $('#dDetails').value.trim() || 'Sur REZ', state: $('#dState').value.trim() || 'Dynamic Island' }).catch(() => null);
+  if (l) onLive(l);
+  toast(!live.discord?.connected ? 'Enregistrée : affichée dès que Discord sera connecté'
+    : live.game && S.discord_auto ? 'Enregistrée (le jeu détecté reste prioritaire)' : 'Rich Presence activée');
 };
-$('#dClear').onclick = async () => { try { onLive(await call('discord_clear')); toast('Présence effacée'); } catch {} };
+$('#dClear').onclick = async () => { const l = await invoke('discord_clear').catch(() => null); if (l) onLive(l); toast('Présence effacée'); };
 $('#dOpen').onclick = () => call('open_uri', { uri: 'discord://-/channels/@me' }).catch(() => {});
 
 // ---------- discord : vocal en direct ----------
 const MIC_X = '<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M4 4l16 16"/></svg>';
 const HEAD_X = '<svg viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0116 0v3M4 4l16 16"/></svg>';
-const VOICE_TXT = {
-  closed: 'Discord fermé', need_secret: 'Ajoute le Client Secret de ton app Discord pour voir ton salon vocal.',
-  need_auth: 'Autorise REZ une fois dans Discord pour afficher ton salon vocal.', authorizing: 'Clique « Autoriser » dans la fenêtre Discord…',
-  connecting: 'Connexion au vocal…', error: 'Vocal indisponible',
+const DSTATE = {
+  off: ['Discord fermé · connexion auto à son lancement', ''], no_id: ['À connecter (1 minute)', 'wait'],
+  invalid_id: ['Application ID à vérifier', 'wait'], waiting: ['En attente de Discord…', 'wait'], ready: ['Connecté · Rich Presence prête', 'on'],
 };
+const VOICE_TXT = { authorizing: 'Clique « Autoriser » dans la fenêtre Discord…', connecting: 'Connexion au vocal…' };
+
+// ---------- assistant de connexion Discord ----------
+const WZ_ERR = {
+  invalid: 'Discord ne reconnaît pas cet ID : copie bien « Application ID » (General Information), pas ton ID utilisateur.',
+  closed: 'Lance Discord : REZ réessaie tout seul dès qu\'il est prêt.',
+  noreply: 'Discord démarre encore… nouvel essai automatique.',
+};
+let wzTimer = 0, wzBusy = false;
+function wzMsg(t, cls = '') { const m = $('#wzMsg'); m.textContent = t; m.className = 'hint wz-msg ' + cls; }
+const pickId = (t) => (String(t).match(/\d{17,20}/) || [''])[0];
+function renderWizard(state) {
+  const show = state === 'no_id' || state === 'invalid_id' || (state === 'off' && !S.discord_client_id);
+  const w = $('#dWiz');
+  const was = !w.classList.contains('hidden');
+  w.classList.toggle('hidden', !show);
+  if (show && !was) {
+    if (!$('#wzId').value && S.discord_client_id) $('#wzId').value = S.discord_client_id;
+    if (state === 'invalid_id') wzMsg(WZ_ERR.invalid, 'warn');
+  }
+  if (!show) clearTimeout(wzTimer);
+}
+async function wizTest() {
+  clearTimeout(wzTimer);
+  const id = pickId($('#wzId').value);
+  if (!id) return wzMsg('Colle l\'Application ID : un nombre de 17 à 20 chiffres.', 'warn');
+  if (wzBusy) return;
+  $('#wzId').value = id;
+  wzBusy = true; $('#wzGo').disabled = true;
+  wzMsg('Vérification auprès de Discord…', 'busy');
+  try {
+    await invoke('discord_test', { cid: id });
+    if (await persist({ discord_client_id: id })) { wzMsg('✓ Discord accepte cet ID : connexion en cours…', 'ok'); toast('Discord connecté à REZ'); }
+  } catch (e) {
+    const k = String(e);
+    wzMsg(WZ_ERR[k] || k, k === 'invalid' ? 'warn' : 'busy');
+    // Discord pas prêt : nouvel essai discret tant que l'assistant est affiché
+    if (k === 'closed' || k === 'noreply') wzTimer = setTimeout(() => { if (!$('#dWiz').classList.contains('hidden')) wizTest(); }, 6000);
+  } finally { wzBusy = false; $('#wzGo').disabled = false; }
+}
+$('#wzGo').onclick = wizTest;
+$('#wzId').addEventListener('paste', () => setTimeout(wizTest, 30));
+$('#wzId').addEventListener('keydown', (e) => { if (e.key === 'Enter') wizTest(); });
+$('#wzPortal').onclick = () => invoke('open_uri', { uri: 'https://discord.com/developers/applications' }).catch(() => {});
+
 listen('rez://voice', (e) => onVoice(e.payload));
 function onVoice(v) {
   if (!v) return;
@@ -684,12 +725,18 @@ function onVoice(v) {
 function renderVoice() {
   const v = voice, ch = v.channel;
   const ready = v.status === 'ready';
-  const setup = ['need_secret', 'need_auth', 'authorizing', 'error'].includes(v.status) && !!S.discord_client_id;
+  const setup = ['need_secret', 'need_auth', 'authorizing'].includes(v.status);
   $('#vCard').classList.toggle('hidden', !ready);
   $('#vSetup').classList.toggle('hidden', !setup);
-  $('#vSecret').classList.toggle('hidden', v.status !== 'need_secret');
-  $('#vSetupTxt').textContent = (v.status === 'error' && v.error) ? v.error : VOICE_TXT[v.status] || '';
-  $('#vAuth').textContent = v.status === 'error' ? 'Réessayer' : 'Activer le vocal';
+  const hasSecret = v.status !== 'need_secret';
+  $('#vSecret').classList.toggle('hidden', hasSecret);
+  $$('#vSetup .steps li')[0]?.classList.toggle('done', hasSecret);
+  $('#vStep').textContent = hasSecret ? 'Secret enregistré ✓' : '';
+  const t = $('#vSetupTxt');
+  if (VOICE_TXT[v.status]) { t.textContent = VOICE_TXT[v.status]; t.className = 'hint wz-msg busy'; }
+  else if (v.error) { t.textContent = v.error; t.className = 'hint wz-msg warn'; }
+  else { t.textContent = ''; t.className = 'hint wz-msg'; }
+  $('#vAuth').textContent = v.error ? 'Réessayer' : 'Activer le vocal';
   $('#vAuth').disabled = v.status === 'authorizing';
   if (ready) {
     $('#vGuild').textContent = ch ? (ch.guild || 'Vocal') : 'Vocal';
@@ -721,16 +768,21 @@ $('#vMute').onclick = () => voiceCmd('mute', !voice.mute);
 $('#vDeaf').onclick = () => voiceCmd('deaf', !voice.deaf);
 $('#vLeave').onclick = () => voiceCmd('leave');
 $('#vPortal').onclick = () => call('open_uri', { uri: 'https://discord.com/developers/applications' }).catch(() => {});
+$('#vCopy').onclick = async () => {
+  try { await navigator.clipboard.writeText('http://localhost'); toast('http://localhost copié'); }
+  catch { getSelection().selectAllChildren($('#vSetup .cp')); toast('Sélectionné : Ctrl+C pour copier'); }
+};
 $('#vAuth').onclick = async () => {
   const sec = $('#vSecret').value.trim();
   if (voice.status === 'need_secret') {
-    if (!sec) return toast('Colle le Client Secret', true);
+    if (!sec) { $('#vSetupTxt').textContent = 'Colle d\'abord le Client Secret (étape 1).'; $('#vSetupTxt').className = 'hint wz-msg warn'; return; }
     if (!(await persist({ discord_secret: sec }))) return;
     $('#vSecret').value = '';
   }
   const b = $('#vAuth'); b.disabled = true;
-  toast('Fenêtre d\'autorisation ouverte dans Discord');
-  try { await call('voice_auth'); toast('Vocal Discord activé'); } catch {} finally { b.disabled = false; }
+  try { await invoke('voice_auth'); toast('Vocal Discord activé'); }
+  catch (e) { const t = $('#vSetupTxt'); t.textContent = String(e); t.className = 'hint wz-msg warn'; }
+  finally { b.disabled = false; }
 };
 
 // ---------- stats & trackers publics ----------

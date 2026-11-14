@@ -1,19 +1,19 @@
-//! Vocal Discord via le RPC local officiel (scopes rpc + rpc.voice.read/write, autorisés par l'utilisateur
-//! dans Discord). Salon vocal en direct : membres, qui parle, micro / casque, quitter.
-//! Connexion IPC séparée de la Rich Presence, gérée par un seul thread (lecture non bloquante).
+//! Thread Discord unique : Rich Presence + vocal en direct sur UNE connexion à l'IPC local officiel.
+//! Vocal : scopes rpc + rpc.voice.read/write, autorisés une fois par l'utilisateur dans Discord.
+//! Discord fermé, lent ou ID refusé : REZ réessaie discrètement en arrière-plan, sans jamais bloquer.
+use crate::discord::{valid_id, Conn, OpenErr};
 use crate::{now_ms, AppState};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
-use std::os::windows::io::AsRawHandle;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::System::Pipes::PeekNamedPipe;
 
 pub enum Cmd {
+    /// Présence voulue (Null = aucune).
+    Activity(Value),
+    /// Réessayer tout de suite (réglages changés, action de l'utilisateur).
+    Kick,
     Auth(Sender<Result<(), String>>),
     Mute(bool),
     Deaf(bool),
@@ -23,99 +23,20 @@ pub enum Cmd {
 
 const SCOPES: [&str; 3] = ["rpc", "rpc.voice.read", "rpc.voice.write"];
 const CH_EVENTS: [&str; 5] = ["VOICE_STATE_CREATE", "VOICE_STATE_UPDATE", "VOICE_STATE_DELETE", "SPEAKING_START", "SPEAKING_STOP"];
+const HANDSHAKE: Duration = Duration::from_secs(12);
 
-// ---------- connexion IPC ----------
-struct Conn {
-    pipe: File,
-    n: u64,
-    queue: Vec<Value>,
+/// Délai avant la prochaine tentative (2 s -> 30 s).
+fn backoff(fails: u32) -> u64 {
+    [2_000, 4_000, 8_000, 15_000, 30_000][(fails.max(1) - 1).min(4) as usize]
 }
 
-impl Conn {
-    fn open(client_id: &str) -> Result<Conn, String> {
-        for i in 0..10 {
-            let Ok(pipe) = OpenOptions::new().read(true).write(true).open(format!(r"\\.\pipe\discord-ipc-{i}")) else { continue };
-            let mut c = Conn { pipe, n: 0, queue: vec![] };
-            c.send(0, &json!({ "v": 1, "client_id": client_id }))?;
-            match c.frame(Duration::from_secs(5))? {
-                Some((1, v)) if v["evt"] == "READY" => return Ok(c),
-                Some((_, v)) => {
-                    let m = v["message"].as_str().or(v["data"]["message"].as_str()).unwrap_or("handshake refusé");
-                    return Err(format!("Discord : {m}"));
-                }
-                None => return Err("Discord ne répond pas".into()),
-            }
-        }
-        Err("Discord n'est pas lancé".into())
-    }
-
-    fn send(&mut self, op: u32, v: &Value) -> Result<(), String> {
-        let body = v.to_string().into_bytes();
-        let mut buf = Vec::with_capacity(8 + body.len());
-        buf.extend_from_slice(&op.to_le_bytes());
-        buf.extend_from_slice(&(body.len() as u32).to_le_bytes());
-        buf.extend_from_slice(&body);
-        self.pipe.write_all(&buf).map_err(|_| "Connexion Discord perdue".to_string())
-    }
-
-    fn avail(&self) -> Result<u32, String> {
-        let mut n = 0u32;
-        unsafe { PeekNamedPipe(HANDLE(self.pipe.as_raw_handle()), None, 0, None, Some(&mut n), None) }
-            .map_err(|_| "Connexion Discord perdue".to_string())?;
-        Ok(n)
-    }
-
-    /// Une trame si disponible avant `timeout` (0 = non bloquant).
-    fn frame(&mut self, timeout: Duration) -> Result<Option<(u32, Value)>, String> {
-        let t0 = Instant::now();
-        loop {
-            if self.avail()? >= 8 {
-                let mut h = [0u8; 8];
-                self.pipe.read_exact(&mut h).map_err(crate::err)?;
-                let op = u32::from_le_bytes([h[0], h[1], h[2], h[3]]);
-                let len = u32::from_le_bytes([h[4], h[5], h[6], h[7]]) as usize;
-                if len > 4 << 20 {
-                    return Err("Trame Discord invalide".into());
-                }
-                let mut d = vec![0u8; len];
-                self.pipe.read_exact(&mut d).map_err(crate::err)?;
-                if op == 2 {
-                    return Err("Discord a fermé la connexion".into());
-                }
-                return Ok(Some((op, serde_json::from_slice(&d).unwrap_or(Value::Null))));
-            }
-            if t0.elapsed() >= timeout {
-                return Ok(None);
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        }
-    }
-
-    /// Commande RPC -> `data` de la réponse. Les événements reçus entre-temps sont mis en file.
-    fn call(&mut self, cmd: &str, args: Value, evt: Option<&str>, timeout: Duration) -> Result<Value, String> {
-        self.n += 1;
-        let nonce = format!("rezv-{}-{}", now_ms(), self.n);
-        let mut msg = json!({ "cmd": cmd, "args": args, "nonce": nonce });
-        if let Some(e) = evt {
-            msg["evt"] = json!(e);
-        }
-        self.send(1, &msg)?;
-        let t0 = Instant::now();
-        loop {
-            let left = timeout.checked_sub(t0.elapsed()).ok_or_else(|| format!("{cmd} : Discord ne répond pas"))?;
-            let Some((_, f)) = self.frame(left)? else { continue };
-            if f["nonce"] == nonce.as_str() {
-                if f["evt"] == "ERROR" {
-                    let code = f["data"]["code"].as_i64().unwrap_or(0);
-                    let m = f["data"]["message"].as_str().unwrap_or("erreur");
-                    return Err(format!("{code}|{m}"));
-                }
-                return Ok(f["data"].clone());
-            }
-            if f["evt"].is_string() {
-                self.queue.push(f);
-            }
-        }
+/// Message lisible pour une connexion initiée par l'utilisateur.
+pub fn open_msg(e: OpenErr) -> String {
+    match e {
+        OpenErr::NotRunning => "Lance Discord, puis réessaie".into(),
+        OpenErr::NoReply => "Discord démarre encore : réessaie dans quelques secondes".into(),
+        OpenErr::InvalidId => "Discord ne reconnaît pas cet Application ID".into(),
+        OpenErr::Other(m) => m,
     }
 }
 
@@ -370,17 +291,23 @@ fn on_event(conn: &mut Conn, v: &mut Voice, f: &Value) {
     }
 }
 
-/// Autorisation (une fois) : Discord affiche la fenêtre « Autoriser REZ ».
-fn authorize(app: &AppHandle, conn: &mut Option<Conn>, v: &mut Voice) -> Result<(), String> {
+/// Autorisation (une fois) : Discord affiche la fenêtre « Autoriser REZ ». Réutilise la connexion du thread.
+fn authorize(app: &AppHandle, conn: &mut Option<Conn>, conn_cid: &mut String, v: &mut Voice) -> Result<(), String> {
     let (mut c, running) = creds(app);
     if !running {
-        return Err("Lance Discord d'abord".into());
+        return Err("Lance Discord, puis réessaie".into());
     }
-    if c.cid.is_empty() || c.secret.is_empty() {
-        return Err("Client ID et Client Secret requis".into());
+    if !valid_id(&c.cid) {
+        return Err("Configure d'abord l'Application ID (étape 1)".into());
     }
-    *conn = None;
-    let mut cn = Conn::open(&c.cid)?;
+    if c.secret.is_empty() {
+        return Err("Colle le Client Secret".into());
+    }
+    if conn.is_none() || *conn_cid != c.cid {
+        *conn = Some(Conn::open(&c.cid, HANDSHAKE).map_err(open_msg)?);
+        *conn_cid = c.cid.clone();
+    }
+    let cn = conn.as_mut().unwrap();
     v.status = "authorizing";
     publish(app, v);
     let d = cn
@@ -390,12 +317,19 @@ fn authorize(app: &AppHandle, conn: &mut Option<Conn>, v: &mut Voice) -> Result<
             if m.to_lowercase().contains("cancel") || e.starts_with("5000|") { "Autorisation refusée dans Discord".to_string() } else { m }
         })?;
     let code = d["code"].as_str().ok_or("Discord n'a pas renvoyé de code")?;
-    let t = exchange(&c, code).map_err(|e| format!("OAuth : {e}"))?;
+    let t = exchange(&c, code).map_err(|e| {
+        if e.to_lowercase().contains("redirect") {
+            "Ajoute la redirection http://localhost dans OAuth2 (étape 3)".to_string()
+        } else if e.to_lowercase().contains("client") {
+            "Client Secret refusé : recopie-le depuis OAuth2".to_string()
+        } else {
+            format!("OAuth : {e}")
+        }
+    })?;
     save_token(app, &t);
     c.token = t;
-    v.me = authenticate(app, &mut cn, &mut c)?;
-    setup(&mut cn, v)?;
-    *conn = Some(cn);
+    v.me = authenticate(app, cn, &mut c)?;
+    setup(cn, v)?;
     Ok(())
 }
 
@@ -410,30 +344,55 @@ fn publish(app: &AppHandle, v: &Voice) {
     }
 }
 
-/// Thread du vocal : ne fait rien tant que le vocal n'est pas autorisé.
+fn idle_voice(v: &mut Voice, status: &'static str) {
+    v.channel = None;
+    v.members.clear();
+    v.status = status;
+}
+
+/// Thread Discord : connexion auto dès que Discord tourne, présence, vocal si autorisé.
 pub fn run(app: AppHandle, rx: Receiver<Cmd>) {
     let mut conn: Option<Conn> = None;
+    let mut conn_cid = String::new();
     let mut v = Voice { status: "off", ..Default::default() };
-    let mut retry_at = 0u64;
+    let mut want = Value::Null; // présence voulue
+    let mut sent: Option<Value> = None; // présence réellement affichée
+    let mut pstate: &'static str = "off";
+    let (mut fails, mut retry_at) = (0u32, 0u64);
+    let mut authed = false;
+    let (mut vfails, mut vretry_at) = (0u32, 0u64);
     loop {
-        let wait = if conn.is_some() { 80 } else { 1500 };
+        let wait = if conn.is_some() { 80 } else { 1000 };
         match rx.recv_timeout(Duration::from_millis(wait)) {
+            Ok(Cmd::Activity(a)) => want = a,
+            Ok(Cmd::Kick) => {
+                (fails, retry_at, vfails, vretry_at) = (0, 0, 0, 0);
+            }
             Ok(Cmd::Auth(reply)) => {
-                let r = authorize(&app, &mut conn, &mut v);
-                if let Err(e) = &r {
-                    v.error = e.clone();
-                } else {
-                    v.error.clear();
+                let r = authorize(&app, &mut conn, &mut conn_cid, &mut v);
+                match &r {
+                    Ok(()) => {
+                        authed = true;
+                        v.error.clear();
+                        (fails, vfails) = (0, 0);
+                    }
+                    Err(e) => {
+                        v.error = e.clone();
+                        authed = false;
+                    }
                 }
                 let _ = reply.send(r);
             }
             Ok(Cmd::Reset) => {
+                // nouveau jeton / déconnexion : une connexion neuve oublie l'ancienne authentification
                 conn = None;
+                sent = None;
+                authed = false;
                 v = Voice { status: "off", ..Default::default() };
-                retry_at = 0;
+                (fails, retry_at, vfails, vretry_at) = (0, 0, 0, 0);
             }
             Ok(cmd) => {
-                if let Some(c) = conn.as_mut() {
+                if let (Some(c), true) = (conn.as_mut(), authed) {
                     let r = match cmd {
                         Cmd::Mute(m) => c.call("SET_VOICE_SETTINGS", json!({ "mute": m }), None, Duration::from_secs(5)).map(|d| {
                             v.mute = d["mute"].as_bool().unwrap_or(m);
@@ -454,62 +413,134 @@ pub fn run(app: AppHandle, rx: Receiver<Cmd>) {
         }
 
         let (mut c, running) = creds(&app);
-        if !running || c.cid.is_empty() || c.secret.is_empty() || c.token.is_null() {
+        if c.cid != conn_cid {
             conn = None;
-            v.channel = None;
-            v.members.clear();
-            v.status = if !running {
-                "closed"
-            } else if c.cid.is_empty() || c.secret.is_empty() {
-                "need_secret"
+            authed = false;
+            sent = None;
+            (fails, retry_at, vfails, vretry_at) = (0, 0, 0, 0);
+            conn_cid = c.cid.clone();
+        }
+        if !running || !valid_id(&c.cid) {
+            conn = None;
+            authed = false;
+            sent = None;
+            (fails, retry_at) = (0, 0);
+            pstate = if !running {
+                "off"
+            } else if c.cid.is_empty() {
+                "no_id"
             } else {
-                "need_auth"
+                "invalid_id"
             };
+            crate::set_presence(&app, pstate, Value::Null, None);
+            idle_voice(&mut v, if running { "need_id" } else { "closed" });
             publish(&app, &v);
             continue;
         }
         if conn.is_none() && now_ms() >= retry_at {
-            v.status = "connecting";
-            let r = Conn::open(&c.cid).and_then(|mut cn| {
-                v.me = authenticate(&app, &mut cn, &mut c)?;
-                setup(&mut cn, &mut v)?;
-                Ok(cn)
-            });
-            match r {
+            match Conn::open(&c.cid, HANDSHAKE) {
                 Ok(cn) => {
                     conn = Some(cn);
-                    v.error.clear();
+                    fails = 0;
+                    sent = None;
+                    authed = false;
+                    (vfails, vretry_at) = (0, 0);
+                    pstate = "ready";
                 }
-                Err(e) => {
-                    v.error = short(&e);
-                    v.status = "error";
-                    retry_at = now_ms() + 10_000;
+                Err(OpenErr::InvalidId) => {
+                    pstate = "invalid_id";
+                    retry_at = now_ms() + 60_000;
+                }
+                Err(_) => {
+                    pstate = "waiting";
+                    fails += 1;
+                    retry_at = now_ms() + backoff(fails);
                 }
             }
         }
-        if let Some(cn) = conn.as_mut() {
-            v.status = "ready";
-            let mut lost = false;
-            loop {
-                match cn.frame(Duration::ZERO) {
-                    Ok(Some((_, f))) => cn.queue.push(f),
-                    Ok(None) => break,
-                    Err(_) => {
-                        lost = true;
-                        break;
-                    }
+        let has_auth = !c.secret.is_empty() && !c.token.is_null();
+        let Some(cn) = conn.as_mut() else {
+            crate::set_presence(&app, pstate, Value::Null, None);
+            let st = if pstate == "invalid_id" {
+                "need_id"
+            } else if c.secret.is_empty() {
+                "need_secret"
+            } else if c.token.is_null() {
+                "need_auth"
+            } else {
+                "connecting"
+            };
+            idle_voice(&mut v, st);
+            publish(&app, &v);
+            continue;
+        };
+
+        // vocal : authentification automatique si REZ a déjà été autorisé
+        if !has_auth {
+            authed = false;
+            idle_voice(&mut v, if c.secret.is_empty() { "need_secret" } else { "need_auth" });
+        } else if !authed && now_ms() >= vretry_at {
+            v.status = "connecting";
+            let r = authenticate(&app, cn, &mut c).and_then(|me| {
+                v.me = me;
+                setup(cn, &mut v)
+            });
+            match r {
+                Ok(()) => {
+                    authed = true;
+                    vfails = 0;
+                    v.error.clear();
+                }
+                Err(_) => {
+                    vfails += 1;
+                    vretry_at = now_ms() + backoff(vfails);
                 }
             }
-            let q: Vec<Value> = std::mem::take(&mut cn.queue);
+        }
+        if authed {
+            v.status = "ready";
+        }
+
+        // présence
+        let mut lost = false;
+        if sent.as_ref() != Some(&want) {
+            match cn.set_activity(&want) {
+                Ok(()) => sent = Some(want.clone()),
+                // refus explicite de Discord : inutile d'insister avec la même présence
+                Err(e) if e.contains('|') && !e.starts_with("0|") => sent = Some(want.clone()),
+                Err(_) => lost = true,
+            }
+        }
+        // événements
+        loop {
+            match cn.frame(Duration::ZERO) {
+                Ok(Some((_, f))) => cn.queue.push(f),
+                Ok(None) => break,
+                Err(_) => {
+                    lost = true;
+                    break;
+                }
+            }
+        }
+        let q: Vec<Value> = std::mem::take(&mut cn.queue);
+        if authed {
             for f in &q {
                 on_event(cn, &mut v, f);
             }
-            if lost {
-                conn = None;
-                v.channel = None;
-                v.members.clear();
-                retry_at = now_ms() + 3_000;
-            }
+        }
+        let user = cn.user.clone();
+        if lost {
+            conn = None;
+            authed = false;
+            sent = None;
+            pstate = "waiting";
+            fails = 1;
+            retry_at = now_ms() + backoff(1);
+            let vs = if has_auth { "connecting" } else { v.status };
+            idle_voice(&mut v, vs);
+            crate::set_presence(&app, pstate, Value::Null, None);
+        } else {
+            crate::set_presence(&app, pstate, user, sent.clone());
         }
         publish(&app, &v);
     }

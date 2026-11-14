@@ -217,6 +217,16 @@
           </div>
           <button class="btn sm" id="dOpen">Ouvrir</button>
         </div>
+        <div class="card form wiz hidden" id="dWiz">
+          <div class="row between"><span class="wg-h">Connecter Discord</span><span class="chip">1 minute · une seule fois</span></div>
+          <ol class="steps">
+            <li><span><b>Crée l'app REZ</b> : « New Application », nomme-la REZ, valide.</span>
+              <button class="btn sm" id="wzPortal">Ouvrir le portail ↗</button></li>
+            <li><span><b>Copie l'Application ID</b> (General Information → Copy) et colle-le :</span>
+              <span class="row"><input id="wzId" class="grow" inputmode="numeric" autocomplete="off" placeholder="Application ID ou lien de la page"><button class="btn primary sm" id="wzGo">Connecter</button></span></li>
+          </ol>
+          <small class="hint wz-msg" id="wzMsg">REZ vérifie l'ID auprès de Discord puis l'enregistre tout seul.</small>
+        </div>
         <div class="card voice hidden" id="vCard">
           <div class="row between">
             <span class="v-ch"><span class="wg-h" id="vGuild">Vocal</span><b id="vChan">Pas en vocal</b></span>
@@ -230,14 +240,17 @@
           </div>
         </div>
         <div class="card form vsetup hidden" id="vSetup">
-          <span class="wg-h">Vocal en direct</span>
-          <small class="hint" id="vSetupTxt">Membres du salon, qui parle, micro / casque / raccrocher depuis l'île.</small>
-          <input id="vSecret" type="password" autocomplete="off" placeholder="Client Secret de ton app Discord">
-          <div class="row">
-            <button class="btn primary grow" id="vAuth">Activer le vocal</button>
-            <button class="btn sm" id="vPortal" title="Portail développeur Discord">Portail ↗</button>
-          </div>
-          <small class="hint">Portail → ton app → OAuth2 : copie le Client Secret et ajoute la redirection <b>http://localhost</b>. Discord te demandera d'autoriser REZ (une seule fois).</small>
+          <div class="row between"><span class="wg-h">Vocal en direct · optionnel</span><span class="chip" id="vStep"></span></div>
+          <small class="hint">Membres du salon, qui parle, micro / casque / raccrocher depuis l'île.</small>
+          <ol class="steps">
+            <li><span>Portail → ton app REZ → <b>OAuth2</b> → <b>Reset Secret</b>, copie-le et colle-le :</span>
+              <input id="vSecret" type="password" autocomplete="off" placeholder="Client Secret"></li>
+            <li><span>Dans <b>Redirects</b>, « Add Redirect » et colle :</span>
+              <span class="row"><code class="cp">http://localhost</code><button class="btn sm" id="vCopy">Copier</button><button class="btn sm" id="vPortal">Portail ↗</button></span></li>
+            <li><span>Clique <b>Activer</b>, puis « Autoriser » dans la fenêtre Discord.</span></li>
+          </ol>
+          <button class="btn primary" id="vAuth">Activer le vocal</button>
+          <small class="hint wz-msg" id="vSetupTxt"></small>
         </div>
         <div class="card act">
           <span class="wg-h">Activité diffusée</span>
@@ -253,7 +266,7 @@
             <button class="btn" id="dClear">Effacer</button>
           </div>
         </div>
-        <p class="hint" id="dHint">Connexion automatique dès que Discord est lancé (IPC officiel). Jeu détecté → présence auto.</p>
+        <p class="hint" id="dHint">Connexion automatique dès que Discord est lancé (IPC officiel local) : si Discord n'est pas prêt, REZ réessaie tout seul en arrière-plan. Jeu détecté → présence auto.</p>
       </section>
 
       <!-- STATS -->
