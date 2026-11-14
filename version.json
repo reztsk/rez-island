@@ -1,6 +1,6 @@
 {
-    "version":  "1.6.0",
-    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.6.0/REZ.exe",
-    "sha256":  "83cb787bc8092f80e7c54a5afda030f471e464cdecc498696c5fa888aeb235da",
-    "notes":  "REZ v1.6.0 - Accueil en grille, Réglages complets, personnalisation totale\n\n- Nouvel accueil en grille de widgets en verre fumé : Minuteur (− ▶ +), Lecteur, Presse-papiers, Notes, Anti-veille, Météo, Horloge, Focus, Système, Batteries, Téléchargements, Discord, Jeu + tuiles d\u0027accès rapide (Calcul, Capture, Perf, Réglages…)\n- Personnalisation : ✎ puis glisser les tuiles, × pour retirer, « Ajouter un widget ». Aussi dans Réglages → Accueil \u0026 widgets\n- Roue crantée ⚙ : page Réglages dédiée (apparence, widgets, modules du dock, position, raccourcis, services, mises à jour, système)\n- Mises à jour : bouton « Vérifier » + installation automatique (île réduite, hors jeu, SHA-256 vérifié)\n- Déplacement libre réparé : cadenas dans l\u0027en-tête, l\u0027île se pose n\u0027importe où (haut, bas, côtés, coins, multi-écrans) et reste exactement là après redémarrage\n- Presse-papiers en mémoire uniquement, copies des gestionnaires de mots de passe ignorées"
+    "version":  "1.7.1",
+    "url":  "https://github.com/reztsk/rez-island/releases/download/v1.7.1/REZ.exe",
+    "sha256":  "9997b8562016460c9fa19a77936916586af80009fe0dc3319b04403b79a00871",
+    "notes":  "Île fermée compacte et rectangulaire (largeur au contenu, heure seule quand rien ne tourne) · Affichage permanent au choix : Auto, Heure, Lecteur, Perf, Météo, Batteries · Fermeture auto après 5 s d\u0027inactivité · Aperçus visuels dans les Réglages · Rainbow Six : rang, RP, K/D + feuille de match (clé Arenyze gratuite) · Comptes IA sans clé : Se connecter avec ChatGPT, Claude ou Gemini (fenêtre officielle isolée)"
 }
